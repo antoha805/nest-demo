@@ -1,4 +1,25 @@
 services:
+  api:
+    build:
+      context: .
+      target: dev
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+    ports:
+      - '${PORT:-3000}:${PORT:-3000}'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+        - action: rebuild
+          path: package-lock.json
+
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped

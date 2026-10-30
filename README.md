@@ -8,15 +8,35 @@ Requires Node.js 20.19+ and Docker.
 
 ```bash
 cp .env.example .env
+docker compose up --watch
+```
+
+In a second terminal, add the sample data:
+
+```bash
+docker compose exec api npm run seed
+```
+
+The API is served at `http://localhost:3000/api` and reloads when files in `src` change. Postgres is exposed on host port `5433`.
+
+To run the API on the host instead, start only the database:
+
+```bash
 npm install
-docker compose up -d --wait
+docker compose up -d --wait postgres
 npm run seed
 npm run start:dev
 ```
 
-The API is served at `http://localhost:3000/api`. Postgres is exposed on host port `5433`.
-
 The schema is created automatically by TypeORM `synchronize`, which is suitable for a demo only. Use migrations for production.
+
+## Production image
+
+```bash
+docker build --target prod -t nest-demo .
+```
+
+The image contains no `.env`, so pass the settings below as environment variables when running it.
 
 ## Configuration
 
