@@ -18,6 +18,21 @@ The API is served at `http://localhost:3000/api`. Postgres is exposed on host po
 
 The schema is created automatically by TypeORM `synchronize`, which is suitable for a demo only. Use migrations for production.
 
+## Configuration
+
+Settings are read from environment variables and `.env`; see `.env.example`. Real environment variables take precedence over `.env`.
+
+| Variable      | Required | Description               |
+| ------------- | -------- | ------------------------- |
+| `PORT`        | No       | API port (default `3000`) |
+| `DB_HOST`     | Yes      | Postgres host             |
+| `DB_PORT`     | Yes      | Postgres port             |
+| `DB_USERNAME` | Yes      | Postgres user             |
+| `DB_PASSWORD` | Yes      | Postgres password         |
+| `DB_NAME`     | Yes      | Postgres database         |
+
+They are validated at startup, and the app exits with an error listing any missing or invalid values.
+
 ## Endpoints
 
 | Method | Path                  | Description       |
