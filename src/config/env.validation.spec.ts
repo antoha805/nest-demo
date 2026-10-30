@@ -21,6 +21,25 @@ describe('validate', () => {
     expect(validate(env).PORT).toBe(3000);
   });
 
+  it('defaults LOG_TRANSPORTS to stdout', () => {
+    expect(validate(env).LOG_TRANSPORTS).toEqual(['stdout']);
+  });
+
+  it('splits LOG_TRANSPORTS on commas', () => {
+    const result = validate({ ...env, LOG_TRANSPORTS: 'stdout, file' });
+
+    expect(result.LOG_TRANSPORTS).toEqual(['stdout', 'file']);
+  });
+
+  it.each(['slack', 'stdout,slack', '', 'file,file'])(
+    'rejects LOG_TRANSPORTS=%j',
+    (LOG_TRANSPORTS) => {
+      expect(() => validate({ ...env, LOG_TRANSPORTS })).toThrow(
+        /LOG_TRANSPORTS/,
+      );
+    },
+  );
+
   it('rejects a missing variable', () => {
     expect(() => validate({ ...env, DB_HOST: undefined })).toThrow(/DB_HOST/);
   });

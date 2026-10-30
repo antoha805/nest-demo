@@ -1,5 +1,7 @@
-import { plainToInstance, Type } from 'class-transformer';
+import { plainToInstance, Transform, Type } from 'class-transformer';
 import {
+  ArrayNotEmpty,
+  ArrayUnique,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -8,6 +10,7 @@ import {
   Min,
   validateSync,
 } from 'class-validator';
+import { LOG_TRANSPORTS, LogTransport } from './log-transports';
 
 export class EnvironmentVariables {
   @Type(() => Number)
@@ -18,6 +21,17 @@ export class EnvironmentVariables {
 
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
   LOG_LEVEL: string = 'info';
+
+  @Transform(({ value }: { value: string }) =>
+    value
+      .split(',')
+      .map((transport) => transport.trim())
+      .filter(Boolean),
+  )
+  @ArrayNotEmpty()
+  @ArrayUnique()
+  @IsIn(LOG_TRANSPORTS, { each: true })
+  LOG_TRANSPORTS: LogTransport[] = ['stdout'];
 
   @IsString()
   @IsNotEmpty()

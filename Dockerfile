@@ -14,5 +14,6 @@ FROM base AS prod
 ENV NODE_ENV=production
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
+RUN mkdir logs && chown node:node logs
 USER node
 CMD ["node", "dist/main"]

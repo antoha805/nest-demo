@@ -8,6 +8,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { EntityNotFoundFilter } from './common/filters/entity-not-found.filter';
 import { QueryFailedFilter } from './common/filters/query-failed.filter';
 import { EnvironmentVariables, validate } from './config/env.validation';
+import { buildLogTransport } from './config/log-transports';
 import { PostsModule } from './posts/posts.module';
 
 @Module({
@@ -20,11 +21,10 @@ import { PostsModule } from './posts/posts.module';
           level: config.get('LOG_LEVEL', { infer: true }),
           genReqId: () => randomUUID(),
           redact: ['req.headers.authorization', 'req.headers.cookie'],
-          // pino-pretty is a dev dependency, so it is absent from the prod image.
-          transport:
-            process.env.NODE_ENV === 'production'
-              ? undefined
-              : { target: 'pino-pretty' },
+          transport: buildLogTransport(
+            config.get('LOG_TRANSPORTS', { infer: true }),
+            config.get('LOG_LEVEL', { infer: true }),
+          ),
         },
       }),
     }),
