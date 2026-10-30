@@ -2,6 +2,8 @@ import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_PIPE } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { randomUUID } from 'node:crypto';
+import { LoggerModule } from 'nestjs-pino';
 import { CategoriesModule } from './categories/categories.module';
 import { EntityNotFoundFilter } from './common/filters/entity-not-found.filter';
 import { QueryFailedFilter } from './common/filters/query-failed.filter';
@@ -11,6 +13,21 @@ import { PostsModule } from './posts/posts.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate }),
+    LoggerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
+        pinoHttp: {
+          level: config.get('LOG_LEVEL', { infer: true }),
+          genReqId: () => randomUUID(),
+          redact: ['req.headers.authorization', 'req.headers.cookie'],
+          // pino-pretty is a dev dependency, so it is absent from the prod image.
+          transport:
+            process.env.NODE_ENV === 'production'
+              ? undefined
+              : { target: 'pino-pretty' },
+        },
+      }),
+    }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({

@@ -1,5 +1,6 @@
 import { plainToInstance, Type } from 'class-transformer';
 import {
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsString,
@@ -14,6 +15,9 @@ export class EnvironmentVariables {
   @Min(1)
   @Max(65535)
   PORT: number = 3000;
+
+  @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+  LOG_LEVEL: string = 'info';
 
   @IsString()
   @IsNotEmpty()

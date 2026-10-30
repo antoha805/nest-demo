@@ -61,14 +61,15 @@ docker run --rm --env-file prod.env nest-demo npm run migration:run:prod
 
 Settings are read from environment variables and `.env`; see `.env.example`. Real environment variables take precedence over `.env`.
 
-| Variable      | Required | Description               |
-| ------------- | -------- | ------------------------- |
-| `PORT`        | No       | API port (default `3000`) |
-| `DB_HOST`     | Yes      | Postgres host             |
-| `DB_PORT`     | Yes      | Postgres port             |
-| `DB_USERNAME` | Yes      | Postgres user             |
-| `DB_PASSWORD` | Yes      | Postgres password         |
-| `DB_NAME`     | Yes      | Postgres database         |
+| Variable      | Required | Description                                                                     |
+| ------------- | -------- | ------------------------------------------------------------------------------- |
+| `PORT`        | No       | API port (default `3000`)                                                       |
+| `LOG_LEVEL`   | No       | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` (default `info`) |
+| `DB_HOST`     | Yes      | Postgres host                                                                   |
+| `DB_PORT`     | Yes      | Postgres port                                                                   |
+| `DB_USERNAME` | Yes      | Postgres user                                                                   |
+| `DB_PASSWORD` | Yes      | Postgres password                                                               |
+| `DB_NAME`     | Yes      | Postgres database                                                               |
 
 They are validated at startup, and the app exits with an error listing any missing or invalid values.
 
