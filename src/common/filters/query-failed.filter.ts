@@ -8,6 +8,7 @@ import {
 import { BaseExceptionFilter } from '@nestjs/core';
 import { QueryFailedError } from 'typeorm';
 
+const PG_RESTRICT_VIOLATION = '23001';
 const PG_NOT_NULL_VIOLATION = '23502';
 const PG_FOREIGN_KEY_VIOLATION = '23503';
 const PG_UNIQUE_VIOLATION = '23505';
@@ -24,6 +25,7 @@ export class QueryFailedFilter extends BaseExceptionFilter {
     switch (code) {
       case PG_NOT_NULL_VIOLATION:
         return new BadRequestException('A required field cannot be null');
+      case PG_RESTRICT_VIOLATION:
       case PG_FOREIGN_KEY_VIOLATION:
         return new ConflictException(
           'The record is referenced by other records',
