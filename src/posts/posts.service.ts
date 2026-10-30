@@ -33,15 +33,11 @@ export class PostsService {
     });
   }
 
-  async findOne(id: string): Promise<Post> {
-    const post = await this.postsRepository.findOne({
+  findOne(id: string): Promise<Post> {
+    return this.postsRepository.findOneOrFail({
       where: { id },
       relations: { category: true },
     });
-    if (!post) {
-      throw new NotFoundException(`Post ${id} not found`);
-    }
-    return post;
   }
 
   async update(id: string, dto: UpdatePostDto): Promise<Post> {

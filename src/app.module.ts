@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_PIPE } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CategoriesModule } from './categories/categories.module';
+import { EntityNotFoundFilter } from './common/filters/entity-not-found.filter';
 import { QueryFailedFilter } from './common/filters/query-failed.filter';
 import { EnvironmentVariables, validate } from './config/env.validation';
 import { PostsModule } from './posts/posts.module';
@@ -37,6 +38,7 @@ import { PostsModule } from './posts/posts.module';
       }),
     },
     { provide: APP_FILTER, useClass: QueryFailedFilter },
+    { provide: APP_FILTER, useClass: EntityNotFoundFilter },
   ],
 })
 export class AppModule {}

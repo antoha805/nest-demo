@@ -22,12 +22,8 @@ export class CategoriesService {
     return this.categoriesRepository.find({ order: { name: 'ASC' } });
   }
 
-  async findOne(id: string): Promise<Category> {
-    const category = await this.categoriesRepository.findOneBy({ id });
-    if (!category) {
-      throw new NotFoundException(`Category ${id} not found`);
-    }
-    return category;
+  findOne(id: string): Promise<Category> {
+    return this.categoriesRepository.findOneByOrFail({ id });
   }
 
   exists(id: string): Promise<boolean> {

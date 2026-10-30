@@ -103,6 +103,13 @@ describe('API (e2e)', () => {
   it('rejects invalid input', async () => {
     const missingId = randomUUID();
 
+    const notFound = await http().get(`/api/posts/${missingId}`).expect(404);
+    expect(notFound.body).toEqual({
+      statusCode: 404,
+      message: 'The requested record was not found',
+      error: 'Not Found',
+    });
+
     await http().get('/api/posts/not-a-uuid').expect(400);
     await http().post('/api/categories').send({}).expect(400);
     await http()
@@ -116,6 +123,11 @@ describe('API (e2e)', () => {
     await http()
       .patch(`/api/posts/${missingId}`)
       .send({ title: 'T' })
+      .expect(404);
+
+    await http()
+      .patch(`/api/categories/${missingId}`)
+      .send({ description: 'updated' })
       .expect(404);
 
     const category = await createCategory();
