@@ -3,6 +3,7 @@ services:
     build:
       context: .
       target: dev
+    command: sh -c "npm run migration:run && npm run start:dev"
     env_file: .env
     environment:
       DB_HOST: postgres

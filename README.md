@@ -24,11 +24,22 @@ To run the API on the host instead, start only the database:
 ```bash
 npm install
 docker compose up -d --wait postgres
+npm run migration:run
 npm run seed
 npm run start:dev
 ```
 
-The schema is created automatically by TypeORM `synchronize`, which is suitable for a demo only. Use migrations for production.
+## Migrations
+
+The schema is managed by TypeORM migrations in `src/database/migrations`. `synchronize` is off in every environment. `docker compose up` applies pending migrations when the `api` container starts.
+
+After changing an entity, generate a migration from the host, with Postgres running and all existing migrations applied:
+
+```bash
+npm run migration:generate -- src/database/migrations/AddPostSlug
+```
+
+Then apply it with `docker compose exec api npm run migration:run`, or `npm run migration:run` on the host. `npm run migration:revert` undoes the latest one.
 
 ## Production image
 
@@ -37,6 +48,12 @@ docker build --target prod -t nest-demo .
 ```
 
 The image contains no `.env`, so pass the settings below as environment variables when running it.
+
+The app does not apply migrations on startup. Run them once as a deploy step before starting the new version:
+
+```bash
+docker run --rm --env-file prod.env nest-demo npm run migration:run:prod
+```
 
 ## Configuration
 
@@ -76,4 +93,4 @@ A category that still has posts cannot be deleted (`409 Conflict`).
 
 ## Tests
 
-`npm run test:e2e` runs the API tests. Postgres must be running. Tests clean up the records they create.
+`npm run test:e2e` runs the API tests. Postgres must be running with migrations applied. Tests clean up the records they create.

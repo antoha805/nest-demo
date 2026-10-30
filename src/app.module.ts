@@ -21,8 +21,6 @@ import { PostsModule } from './posts/posts.module';
         password: config.get('DB_PASSWORD', { infer: true }),
         database: config.get('DB_NAME', { infer: true }),
         autoLoadEntities: true,
-        // Demo only: use migrations in production.
-        synchronize: true,
       }),
     }),
     CategoriesModule,
