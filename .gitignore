@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+coverage/
+*.tsbuildinfo
+
+# env
+.env
+
+# logs
+*.log
+
+# IDE
+.idea/
+.vscode/
