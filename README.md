@@ -145,4 +145,4 @@ A category that still has posts cannot be deleted (`409 Conflict`).
 
 ## Tests
 
-`npm run test:e2e` runs the API tests. Postgres must be running with migrations applied. Tests clean up the records they create.
+`npm run test:e2e` runs the API tests against a separate `nest_demo_test` database on the Postgres server from `.env`, which must be running. Each run drops and recreates that database and applies all migrations, so your development data is not touched.
