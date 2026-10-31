@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Category } from '../categories/category.entity';
+import { User } from '../users/user.entity';
 
 @Entity('posts')
 export class Post {
@@ -32,6 +33,14 @@ export class Post {
   })
   @JoinColumn({ name: 'categoryId' })
   category: Category;
+
+  // Null for posts from before authors, and after the author is deleted.
+  @Column({ type: 'uuid', nullable: true })
+  authorId: string | null;
+
+  @ManyToOne(() => User, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'authorId' })
+  author: User | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

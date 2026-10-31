@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { MEMBER_ROLE } from '../roles/permission-names';
 import { RolesService } from '../roles/roles.service';
 import { User } from './user.entity';
 
@@ -17,9 +18,10 @@ export class UsersService {
     private readonly rolesService: RolesService,
   ) {}
 
-  create(email: string, passwordHash: string): Promise<User> {
+  async create(email: string, passwordHash: string): Promise<User> {
+    const roles = await this.rolesService.findRolesByNames([MEMBER_ROLE]);
     return this.usersRepository.save(
-      this.usersRepository.create({ email, passwordHash }),
+      this.usersRepository.create({ email, passwordHash, roles }),
     );
   }
 

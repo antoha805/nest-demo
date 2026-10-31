@@ -132,7 +132,7 @@ To add a transport, add its pino transport target to `src/config/log-transports.
 
 A user holds roles, each role grants permissions, and permissions can also be granted to a user directly. They are read from the database on every request, so changes apply immediately to tokens already issued. Passwords are hashed with bcrypt.
 
-New users have no roles. The API cannot grant the first admin, so register a user and promote them from the command line:
+New users get the `member` role. The API cannot grant the first admin, so register a user and promote them from the command line:
 
 ```bash
 npm run make-admin -- alice@example.com
@@ -140,7 +140,7 @@ npm run make-admin -- alice@example.com
 
 In production, use `docker compose -f docker-compose.prod.yml --env-file prod.env exec api npm run make-admin:prod -- alice@example.com`.
 
-`npm run permissions:sync` stores the permissions from the code and two roles in the database. It runs after migrations on every `docker compose up` and deploy, and is safe to re-run. `admin` always gets every permission and cannot be changed or deleted. `editor` starts with permission to create, update and delete categories and posts, and is only created if it is missing, so edits made through the API are kept but a deleted `editor` role comes back.
+`npm run permissions:sync` stores the permissions from the code and three roles in the database. It runs after migrations on every `docker compose up` and deploy, and is safe to re-run. `admin` always gets every permission and cannot be changed or deleted. `editor` and `member` start with the permissions in `src/roles/permission-names.ts`, and are only created if missing, so edits made through the API are kept but a deleted `editor` role comes back. `member` cannot be renamed or deleted, as registration assigns it.
 
 Every route requires a token unless marked `@Public()`. To protect a route, add `@RequirePermissions(PERMISSIONS.POSTS_CREATE)`, which responds with `403 Forbidden` if any listed permission is missing.
 
@@ -148,34 +148,40 @@ To add a permission, add it to `src/roles/permission-names.ts`. The next sync in
 
 ## Endpoints
 
-| Method | Path                         | Permission          | Description                    |
-| ------ | ---------------------------- | ------------------- | ------------------------------ |
-| POST   | `/api/auth/register`         | Public              | Create an account              |
-| POST   | `/api/auth/login`            | Public              | Get an access token            |
-| GET    | `/api/auth/me`               | Any logged-in user  | Get your roles and permissions |
-| POST   | `/api/categories`            | `categories.create` | Create a category              |
-| GET    | `/api/categories`            | Public              | List categories                |
-| GET    | `/api/categories/:id`        | Public              | Get a category                 |
-| PATCH  | `/api/categories/:id`        | `categories.update` | Update a category              |
-| DELETE | `/api/categories/:id`        | `categories.delete` | Delete a category              |
-| POST   | `/api/posts`                 | `posts.create`      | Create a post                  |
-| GET    | `/api/posts`                 | Public              | List posts                     |
-| GET    | `/api/posts/:id`             | Public              | Get a post                     |
-| PATCH  | `/api/posts/:id`             | `posts.update`      | Update a post                  |
-| DELETE | `/api/posts/:id`             | `posts.delete`      | Delete a post                  |
-| GET    | `/api/users`                 | `users.read`        | List users                     |
-| GET    | `/api/users/:id`             | `users.read`        | Get a user                     |
-| PUT    | `/api/users/:id/roles`       | `users.manage`      | Replace a user's roles         |
-| PUT    | `/api/users/:id/permissions` | `users.manage`      | Replace direct permissions     |
-| DELETE | `/api/users/:id`             | `users.manage`      | Delete a user                  |
-| POST   | `/api/roles`                 | `roles.manage`      | Create a role                  |
-| GET    | `/api/roles`                 | `roles.read`        | List roles                     |
-| GET    | `/api/roles/:id`             | `roles.read`        | Get a role                     |
-| PATCH  | `/api/roles/:id`             | `roles.manage`      | Update a role                  |
-| DELETE | `/api/roles/:id`             | `roles.manage`      | Delete a role                  |
-| GET    | `/api/permissions`           | `roles.read`        | List permissions               |
+| Method | Path                         | Permission                               | Description                    |
+| ------ | ---------------------------- | ---------------------------------------- | ------------------------------ |
+| POST   | `/api/auth/register`         | Public                                   | Create an account              |
+| POST   | `/api/auth/login`            | Public                                   | Get an access token            |
+| GET    | `/api/auth/me`               | Any logged-in user                       | Get your roles and permissions |
+| POST   | `/api/categories`            | `categories.create`                      | Create a category              |
+| GET    | `/api/categories`            | Public                                   | List categories                |
+| GET    | `/api/categories/:id`        | Public                                   | Get a category                 |
+| PATCH  | `/api/categories/:id`        | `categories.update`                      | Update a category              |
+| DELETE | `/api/categories/:id`        | `categories.delete`                      | Delete a category              |
+| POST   | `/api/posts`                 | `posts.create`                           | Create a post                  |
+| GET    | `/api/posts`                 | Public                                   | List posts                     |
+| GET    | `/api/posts/:id`             | Public                                   | Get a post                     |
+| PATCH  | `/api/posts/:id`             | `posts.update.all` or `posts.update.own` | Update a post                  |
+| DELETE | `/api/posts/:id`             | `posts.delete.all` or `posts.delete.own` | Delete a post                  |
+| GET    | `/api/users`                 | `users.read`                             | List users                     |
+| GET    | `/api/users/:id`             | `users.read`                             | Get a user                     |
+| PUT    | `/api/users/:id/roles`       | `users.manage`                           | Replace a user's roles         |
+| PUT    | `/api/users/:id/permissions` | `users.manage`                           | Replace direct permissions     |
+| DELETE | `/api/users/:id`             | `users.manage`                           | Delete a user                  |
+| POST   | `/api/roles`                 | `roles.manage`                           | Create a role                  |
+| GET    | `/api/roles`                 | `roles.read`                             | List roles                     |
+| GET    | `/api/roles/:id`             | `roles.read`                             | Get a role                     |
+| PATCH  | `/api/roles/:id`             | `roles.manage`                           | Update a role                  |
+| DELETE | `/api/roles/:id`             | `roles.manage`                           | Delete a role                  |
+| GET    | `/api/permissions`           | `roles.read`                             | List permissions               |
 
 A category that still has posts cannot be deleted (`409 Conflict`).
+
+A post's `authorId` is set to the logged-in user when it is created and cannot be changed through the API. It is `null` for older posts and sample data, and becomes `null` if the author is deleted.
+
+The `.all` permissions apply to every post, and the `.own` ones only to posts the user wrote. Posts with no author need `.all`.
+
+Posts are drafts until published, which requires `posts.publish`. Without it, a user can only create drafts, and editing a published post turns it back into a draft. Published posts are public. Drafts are visible only to their author and to users with `posts.publish`, and return `404 Not Found` to anyone else, so send the token on `GET` requests to see them.
 
 ## Seeding
 

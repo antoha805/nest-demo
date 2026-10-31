@@ -10,6 +10,8 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
+import type { AuthenticatedUser } from '../auth/authenticated-user';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import { PERMISSIONS } from '../roles/permission-names';
@@ -23,32 +25,41 @@ export class PostsController {
 
   @Post()
   @RequirePermissions(PERMISSIONS.POSTS_CREATE)
-  create(@Body() dto: CreatePostDto) {
-    return this.postsService.create(dto);
+  create(@Body() dto: CreatePostDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.postsService.create(dto, user);
   }
 
   @Public()
   @Get()
-  findAll() {
-    return this.postsService.findAll();
+  findAll(@CurrentUser() user?: AuthenticatedUser) {
+    return this.postsService.findAll(user);
   }
 
   @Public()
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.postsService.findOne(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user?: AuthenticatedUser,
+  ) {
+    return this.postsService.findOne(id, user);
   }
 
+  // The service checks permissions for this and remove, as they depend on the post's author.
   @Patch(':id')
-  @RequirePermissions(PERMISSIONS.POSTS_UPDATE)
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePostDto) {
-    return this.postsService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePostDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.postsService.update(id, dto, user);
   }
 
   @Delete(':id')
-  @RequirePermissions(PERMISSIONS.POSTS_DELETE)
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.postsService.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.postsService.remove(id, user);
   }
 }

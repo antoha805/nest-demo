@@ -2,8 +2,7 @@ import { EntityManager } from 'typeorm';
 import { Permission } from '../roles/permission.entity';
 import {
   ADMIN_ROLE,
-  EDITOR_PERMISSIONS,
-  EDITOR_ROLE,
+  DEFAULT_ROLE_PERMISSIONS,
   PERMISSION_NAMES,
 } from '../roles/permission-names';
 import { Role } from '../roles/role.entity';
@@ -27,13 +26,14 @@ export async function syncPermissions(manager: EntityManager): Promise<void> {
     permissions,
   });
 
-  // Only created once, as it can be edited through the API.
-  if (!(await manager.existsBy(Role, { name: EDITOR_ROLE }))) {
-    const names: string[] = EDITOR_PERMISSIONS;
-    await manager.save(Role, {
-      name: EDITOR_ROLE,
-      permissions: permissions.filter((p) => names.includes(p.name)),
-    });
+  for (const [name, defaults] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+    if (!(await manager.existsBy(Role, { name }))) {
+      const names: string[] = defaults;
+      await manager.save(Role, {
+        name,
+        permissions: permissions.filter((p) => names.includes(p.name)),
+      });
+    }
   }
 }
 

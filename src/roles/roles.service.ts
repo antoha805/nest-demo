@@ -8,7 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
-import { ADMIN_ROLE } from './permission-names';
+import { ADMIN_ROLE, MEMBER_ROLE } from './permission-names';
 import { Permission } from './permission.entity';
 import { Role } from './role.entity';
 
@@ -50,6 +50,9 @@ export class RolesService {
   ): Promise<Role> {
     const role = await this.findOne(id);
     this.assertNotAdmin(role);
+    if (role.name === MEMBER_ROLE && name !== undefined && name !== role.name) {
+      throw new ConflictException('The member role cannot be renamed');
+    }
     if (name !== undefined) {
       role.name = name;
     }
@@ -65,6 +68,10 @@ export class RolesService {
       throw new NotFoundException(`Role ${id} not found`);
     }
     this.assertNotAdmin(role);
+    // Registration assigns this role.
+    if (role.name === MEMBER_ROLE) {
+      throw new ConflictException('The member role cannot be deleted');
+    }
     await this.rolesRepository.delete(id);
   }
 

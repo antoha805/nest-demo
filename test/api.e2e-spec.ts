@@ -196,8 +196,12 @@ describe('API (e2e)', () => {
 
       await expect(currentUser(token)).resolves.toMatchObject({
         email,
-        roles: [],
-        permissions: [],
+        roles: ['member'],
+        permissions: [
+          PERMISSIONS.POSTS_CREATE,
+          PERMISSIONS.POSTS_DELETE_OWN,
+          PERMISSIONS.POSTS_UPDATE_OWN,
+        ],
       });
 
       const login = await anonymous()
@@ -390,6 +394,119 @@ describe('API (e2e)', () => {
       await http().delete(`/api/roles/${id}`).expect(204);
       await http().get(`/api/roles/${id}`).expect(404);
       await withToken(token).get('/api/users').expect(403);
+    });
+
+    it('records the author of a post', async () => {
+      const { token } = await register();
+      const { id: authorId } = await currentUser(token);
+      await http()
+        .put(`/api/users/${authorId}/roles`)
+        .send({ roles: ['editor'] })
+        .expect(200);
+      const category = await createCategory();
+      const body = {
+        title: 'T',
+        content: 'C',
+        published: true,
+        categoryId: category.id,
+      };
+
+      await withToken(token)
+        .post('/api/posts')
+        .send({ ...body, authorId: randomUUID() })
+        .expect(400);
+
+      const created = await withToken(token)
+        .post('/api/posts')
+        .send(body)
+        .expect(201);
+      const post = created.body as Post;
+      expect(post.authorId).toBe(authorId);
+
+      await http()
+        .patch(`/api/posts/${post.id}`)
+        .send({ authorId: randomUUID() })
+        .expect(400);
+      const edited = await http()
+        .patch(`/api/posts/${post.id}`)
+        .send({ title: 'Edited' })
+        .expect(200);
+      expect((edited.body as Post).authorId).toBe(authorId);
+
+      const fetched = await anonymous()
+        .get(`/api/posts/${post.id}`)
+        .expect(200);
+      expect(fetched.body).not.toHaveProperty('author');
+
+      await http().delete(`/api/users/${authorId}`).expect(204);
+      const orphaned = await anonymous()
+        .get(`/api/posts/${post.id}`)
+        .expect(200);
+      expect((orphaned.body as Post).authorId).toBeNull();
+
+      await http().delete(`/api/posts/${post.id}`).expect(204);
+      await http().delete(`/api/categories/${category.id}`).expect(204);
+    });
+
+    it('limits members to their own posts and drafts', async () => {
+      const { token } = await register();
+      const { token: otherToken } = await register();
+      const category = await createCategory();
+      const body = { title: 'T', content: 'C', categoryId: category.id };
+
+      await withToken(token)
+        .post('/api/posts')
+        .send({ ...body, published: true })
+        .expect(403);
+      const created = await withToken(token)
+        .post('/api/posts')
+        .send(body)
+        .expect(201);
+      const { id } = created.body as Post;
+      const url = `/api/posts/${id}`;
+      const isListed = async (client: ReturnType<typeof anonymous>) => {
+        const response = await client.get('/api/posts').expect(200);
+        return (response.body as Post[]).some((post) => post.id === id);
+      };
+
+      await anonymous().get(url).expect(404);
+      await withToken(otherToken).get(url).expect(404);
+      await withToken(token).get(url).expect(200);
+      await http().get(url).expect(200);
+      await withToken('not-a-token').get(url).expect(404);
+      await expect(isListed(anonymous())).resolves.toBe(false);
+      await expect(isListed(withToken(otherToken))).resolves.toBe(false);
+      await expect(isListed(withToken(token))).resolves.toBe(true);
+
+      await withToken(otherToken).patch(url).send({ title: 'X' }).expect(403);
+      await withToken(otherToken).delete(url).expect(403);
+      await withToken(token).patch(url).send({ published: true }).expect(403);
+      await withToken(token).patch(url).send({ title: 'Mine' }).expect(200);
+
+      await http().patch(url).send({ published: true }).expect(200);
+      await anonymous().get(url).expect(200);
+      await expect(isListed(anonymous())).resolves.toBe(true);
+
+      const edited = await withToken(token)
+        .patch(url)
+        .send({ content: 'Rewritten' })
+        .expect(200);
+      expect((edited.body as Post).published).toBe(false);
+      await anonymous().get(url).expect(404);
+
+      await withToken(token).delete(url).expect(204);
+      await http().delete(`/api/categories/${category.id}`).expect(204);
+    });
+
+    it('protects the member role', async () => {
+      const roles = await http().get('/api/roles').expect(200);
+      const member = (roles.body as Role[]).find((r) => r.name === 'member');
+
+      await http()
+        .patch(`/api/roles/${member?.id}`)
+        .send({ name: uniqueName() })
+        .expect(409);
+      await http().delete(`/api/roles/${member?.id}`).expect(409);
     });
 
     it('protects the admin role', async () => {
