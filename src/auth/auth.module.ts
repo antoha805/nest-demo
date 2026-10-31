@@ -3,16 +3,18 @@ import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { CaslModule } from '../casl/casl.module';
+import { PoliciesGuard } from '../casl/policies.guard';
 import { EnvironmentVariables } from '../config/env.validation';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { PermissionsGuard } from './guards/permissions.guard';
 
 @Module({
   imports: [
     UsersModule,
+    CaslModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
@@ -31,9 +33,9 @@ import { PermissionsGuard } from './guards/permissions.guard';
   providers: [
     AuthService,
     // Every route requires a token unless marked @Public(). Order matters:
-    // PermissionsGuard reads the user that JwtAuthGuard sets.
+    // PoliciesGuard reads the user that JwtAuthGuard sets.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useClass: PoliciesGuard },
   ],
 })
 export class AuthModule {}

@@ -9,10 +9,10 @@ import {
   ParseUUIDPipe,
   Put,
 } from '@nestjs/common';
-import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
-import { PERMISSIONS } from '../roles/permission-names';
+import { CheckPolicies } from '../casl/check-policies.decorator';
 import { SetUserPermissionsDto } from './dto/set-user-permissions.dto';
 import { SetUserRolesDto } from './dto/set-user-roles.dto';
+import { User } from './user.entity';
 import { UsersService } from './users.service';
 
 @Controller('users')
@@ -20,19 +20,19 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @RequirePermissions(PERMISSIONS.USERS_READ)
+  @CheckPolicies((ability) => ability.can('read', User))
   findAll() {
     return this.usersService.findAll();
   }
 
   @Get(':id')
-  @RequirePermissions(PERMISSIONS.USERS_READ)
+  @CheckPolicies((ability) => ability.can('read', User))
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.findOne(id);
   }
 
   @Put(':id/roles')
-  @RequirePermissions(PERMISSIONS.USERS_MANAGE)
+  @CheckPolicies((ability) => ability.can('update', User))
   setRoles(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetUserRolesDto,
@@ -41,7 +41,7 @@ export class UsersController {
   }
 
   @Put(':id/permissions')
-  @RequirePermissions(PERMISSIONS.USERS_MANAGE)
+  @CheckPolicies((ability) => ability.can('update', User))
   setPermissions(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetUserPermissionsDto,
@@ -50,7 +50,7 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @RequirePermissions(PERMISSIONS.USERS_MANAGE)
+  @CheckPolicies((ability) => ability.can('delete', User))
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.remove(id);

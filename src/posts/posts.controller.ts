@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -13,26 +14,34 @@ import {
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
-import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
-import { PERMISSIONS } from '../roles/permission-names';
+import { CaslAbilityFactory } from '../casl/casl-ability.factory';
+import { CheckPolicies } from '../casl/check-policies.decorator';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
-import { PostsService } from './posts.service';
+import { Post as PostEntity } from './post.entity';
+import { PostsService, PostVisibility } from './posts.service';
 
 @Controller('posts')
 export class PostsController {
-  constructor(private readonly postsService: PostsService) {}
+  constructor(
+    private readonly postsService: PostsService,
+    private readonly caslAbilityFactory: CaslAbilityFactory,
+  ) {}
 
   @Post()
-  @RequirePermissions(PERMISSIONS.POSTS_CREATE)
+  @CheckPolicies((ability) => ability.can('create', PostEntity))
   create(@Body() dto: CreatePostDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.postsService.create(dto, user);
+    const ability = this.caslAbilityFactory.createForUser(user);
+    if (dto.published && ability.cannot('publish', PostEntity)) {
+      throw new ForbiddenException('You cannot publish posts');
+    }
+    return this.postsService.create(dto, user.id);
   }
 
   @Public()
   @Get()
   findAll(@CurrentUser() user?: AuthenticatedUser) {
-    return this.postsService.findAll(user);
+    return this.postsService.findAll(this.visibilityFor(user));
   }
 
   @Public()
@@ -41,25 +50,51 @@ export class PostsController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
-    return this.postsService.findOne(id, user);
+    return this.postsService.findVisible(id, this.visibilityFor(user));
   }
 
-  // The service checks permissions for this and remove, as they depend on the post's author.
   @Patch(':id')
-  update(
+  @CheckPolicies((ability) => ability.can('update', PostEntity))
+  async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePostDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.postsService.update(id, dto, user);
+    const ability = this.caslAbilityFactory.createForUser(user);
+    if (ability.cannot('update', await this.postsService.findOne(id))) {
+      throw new ForbiddenException();
+    }
+
+    const canPublish = ability.can('publish', PostEntity);
+    if (dto.published && !canPublish) {
+      throw new ForbiddenException('You cannot publish posts');
+    }
+    return this.postsService.update(id, dto, { keepPublished: canPublish });
   }
 
   @Delete(':id')
+  @CheckPolicies((ability) => ability.can('delete', PostEntity))
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(
+  async remove(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.postsService.remove(id, user);
+    const ability = this.caslAbilityFactory.createForUser(user);
+    if (ability.cannot('delete', await this.postsService.findOne(id))) {
+      throw new ForbiddenException();
+    }
+    return this.postsService.remove(id);
+  }
+
+  // Publishers have to see drafts in order to review them.
+  private visibilityFor(user?: AuthenticatedUser): PostVisibility {
+    if (!user) {
+      return { includeDrafts: false };
+    }
+    const ability = this.caslAbilityFactory.createForUser(user);
+    return {
+      includeDrafts: ability.can('publish', PostEntity),
+      draftsByAuthorId: user.id,
+    };
   }
 }

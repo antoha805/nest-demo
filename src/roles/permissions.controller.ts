@@ -1,6 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
-import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
-import { PERMISSIONS } from './permission-names';
+import { CheckPolicies } from '../casl/check-policies.decorator';
+import { Role } from './role.entity';
 import { RolesService } from './roles.service';
 
 @Controller('permissions')
@@ -8,7 +8,7 @@ export class PermissionsController {
   constructor(private readonly rolesService: RolesService) {}
 
   @Get()
-  @RequirePermissions(PERMISSIONS.ROLES_READ)
+  @CheckPolicies((ability) => ability.can('read', Role))
   findAll() {
     return this.rolesService.findAllPermissions();
   }

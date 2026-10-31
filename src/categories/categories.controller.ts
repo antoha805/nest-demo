@@ -11,9 +11,9 @@ import {
   Post,
 } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
-import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
-import { PERMISSIONS } from '../roles/permission-names';
+import { CheckPolicies } from '../casl/check-policies.decorator';
 import { CategoriesService } from './categories.service';
+import { Category } from './category.entity';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
@@ -22,7 +22,7 @@ export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @Post()
-  @RequirePermissions(PERMISSIONS.CATEGORIES_CREATE)
+  @CheckPolicies((ability) => ability.can('create', Category))
   create(@Body() dto: CreateCategoryDto) {
     return this.categoriesService.create(dto);
   }
@@ -40,7 +40,7 @@ export class CategoriesController {
   }
 
   @Patch(':id')
-  @RequirePermissions(PERMISSIONS.CATEGORIES_UPDATE)
+  @CheckPolicies((ability) => ability.can('update', Category))
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCategoryDto,
@@ -49,7 +49,7 @@ export class CategoriesController {
   }
 
   @Delete(':id')
-  @RequirePermissions(PERMISSIONS.CATEGORIES_DELETE)
+  @CheckPolicies((ability) => ability.can('delete', Category))
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.categoriesService.remove(id);
