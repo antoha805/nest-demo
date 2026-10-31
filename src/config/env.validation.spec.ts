@@ -8,6 +8,7 @@ describe('validate', () => {
     DB_USERNAME: 'postgres',
     DB_PASSWORD: 's3cret',
     DB_NAME: 'nest_demo',
+    JWT_SECRET: 'a'.repeat(32),
   };
 
   it('converts ports to numbers', () => {
@@ -42,6 +43,14 @@ describe('validate', () => {
 
   it('rejects a missing variable', () => {
     expect(() => validate({ ...env, DB_HOST: undefined })).toThrow(/DB_HOST/);
+  });
+
+  it('defaults JWT_EXPIRES_IN to an hour', () => {
+    expect(validate(env).JWT_EXPIRES_IN).toBe(3600);
+  });
+
+  it.each([undefined, 'too-short'])('rejects JWT_SECRET=%j', (JWT_SECRET) => {
+    expect(() => validate({ ...env, JWT_SECRET })).toThrow(/JWT_SECRET/);
   });
 
   it('rejects a non-numeric port', () => {

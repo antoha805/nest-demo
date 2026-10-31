@@ -8,6 +8,7 @@ import {
   IsString,
   Max,
   Min,
+  MinLength,
   validateSync,
 } from 'class-validator';
 import { LOG_TRANSPORTS, LogTransport } from './log-transports';
@@ -54,6 +55,15 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   DB_NAME: string;
+
+  @IsString()
+  @MinLength(32)
+  JWT_SECRET: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  JWT_EXPIRES_IN: number = 3600;
 }
 
 export function validate(config: Record<string, unknown>) {

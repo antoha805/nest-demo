@@ -4,6 +4,7 @@ import { APP_FILTER, APP_PIPE } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { LoggerModule } from 'nestjs-pino';
+import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
 import { EntityNotFoundFilter } from './common/filters/entity-not-found.filter';
 import { QueryFailedFilter } from './common/filters/query-failed.filter';
@@ -40,6 +41,7 @@ import { PostsModule } from './posts/posts.module';
         autoLoadEntities: true,
       }),
     }),
+    AuthModule,
     CategoriesModule,
     PostsModule,
   ],

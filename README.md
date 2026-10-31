@@ -107,6 +107,8 @@ Settings are read from environment variables and `.env`; see `.env.example`. Rea
 | `DB_USERNAME`    | Yes      | Postgres user                                                                   |
 | `DB_PASSWORD`    | Yes      | Postgres password                                                               |
 | `DB_NAME`        | Yes      | Postgres database                                                               |
+| `JWT_SECRET`     | Yes      | Key that signs access tokens, at least 32 characters                            |
+| `JWT_EXPIRES_IN` | No       | Access token lifetime in seconds (default `3600`)                               |
 
 They are validated at startup, and the app exits with an error listing any missing or invalid values.
 
@@ -122,20 +124,54 @@ They are validated at startup, and the app exits with an error listing any missi
 
 To add a transport, add its pino transport target to `src/config/log-transports.ts`.
 
+## Authentication and authorization
+
+`POST /api/auth/register` and `POST /api/auth/login` return an `accessToken`. Send it as `Authorization: Bearer <token>`. Both endpoints allow 10 requests per minute per IP.
+
+A user holds roles, each role grants permissions, and permissions can also be granted to a user directly. They are read from the database on every request, so changes apply immediately to tokens already issued. Passwords are hashed with bcrypt.
+
+New users have no roles. The API cannot grant the first admin, so register a user and promote them from the command line:
+
+```bash
+npm run make-admin -- alice@example.com
+```
+
+In production, use `docker compose -f docker-compose.prod.yml --env-file prod.env exec api npm run make-admin:prod -- alice@example.com`.
+
+The migrations create two roles. `admin` has every permission and cannot be changed or deleted. `editor` can create, update and delete categories and posts.
+
+Every route requires a token unless marked `@Public()`. To protect a route, add `@RequirePermissions(PERMISSIONS.POSTS_CREATE)`, which responds with `403 Forbidden` if any listed permission is missing.
+
+To add a permission, add it to `src/roles/permission-names.ts`, and write a migration that inserts it and grants it to `admin`.
+
 ## Endpoints
 
-| Method | Path                  | Description       |
-| ------ | --------------------- | ----------------- |
-| POST   | `/api/categories`     | Create a category |
-| GET    | `/api/categories`     | List categories   |
-| GET    | `/api/categories/:id` | Get a category    |
-| PATCH  | `/api/categories/:id` | Update a category |
-| DELETE | `/api/categories/:id` | Delete a category |
-| POST   | `/api/posts`          | Create a post     |
-| GET    | `/api/posts`          | List posts        |
-| GET    | `/api/posts/:id`      | Get a post        |
-| PATCH  | `/api/posts/:id`      | Update a post     |
-| DELETE | `/api/posts/:id`      | Delete a post     |
+| Method | Path                         | Permission          | Description                    |
+| ------ | ---------------------------- | ------------------- | ------------------------------ |
+| POST   | `/api/auth/register`         | Public              | Create an account              |
+| POST   | `/api/auth/login`            | Public              | Get an access token            |
+| GET    | `/api/auth/me`               | Any logged-in user  | Get your roles and permissions |
+| POST   | `/api/categories`            | `categories.create` | Create a category              |
+| GET    | `/api/categories`            | Public              | List categories                |
+| GET    | `/api/categories/:id`        | Public              | Get a category                 |
+| PATCH  | `/api/categories/:id`        | `categories.update` | Update a category              |
+| DELETE | `/api/categories/:id`        | `categories.delete` | Delete a category              |
+| POST   | `/api/posts`                 | `posts.create`      | Create a post                  |
+| GET    | `/api/posts`                 | Public              | List posts                     |
+| GET    | `/api/posts/:id`             | Public              | Get a post                     |
+| PATCH  | `/api/posts/:id`             | `posts.update`      | Update a post                  |
+| DELETE | `/api/posts/:id`             | `posts.delete`      | Delete a post                  |
+| GET    | `/api/users`                 | `users.read`        | List users                     |
+| GET    | `/api/users/:id`             | `users.read`        | Get a user                     |
+| PUT    | `/api/users/:id/roles`       | `users.manage`      | Replace a user's roles         |
+| PUT    | `/api/users/:id/permissions` | `users.manage`      | Replace direct permissions     |
+| DELETE | `/api/users/:id`             | `users.manage`      | Delete a user                  |
+| POST   | `/api/roles`                 | `roles.manage`      | Create a role                  |
+| GET    | `/api/roles`                 | `roles.read`        | List roles                     |
+| GET    | `/api/roles/:id`             | `roles.read`        | Get a role                     |
+| PATCH  | `/api/roles/:id`             | `roles.manage`      | Update a role                  |
+| DELETE | `/api/roles/:id`             | `roles.manage`      | Delete a role                  |
+| GET    | `/api/permissions`           | `roles.read`        | List permissions               |
 
 A category that still has posts cannot be deleted (`409 Conflict`).
 

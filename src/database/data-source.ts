@@ -5,6 +5,9 @@ import { DataSource } from 'typeorm';
 import { Category } from '../categories/category.entity';
 import { validate } from '../config/env.validation';
 import { Post } from '../posts/post.entity';
+import { Permission } from '../roles/permission.entity';
+import { Role } from '../roles/role.entity';
+import { User } from '../users/user.entity';
 
 // Used by the TypeORM CLI, which runs outside Nest and its ConfigModule.
 if (existsSync('.env')) {
@@ -20,7 +23,7 @@ export default new DataSource({
   username: env.DB_USERNAME,
   password: env.DB_PASSWORD,
   database: env.DB_NAME,
-  entities: [Category, Post],
+  entities: [Category, Post, User, Role, Permission],
   // Match this file's extension: dist also contains .d.ts files.
   migrations: [join(__dirname, 'migrations', `*${extname(__filename)}`)],
 });
