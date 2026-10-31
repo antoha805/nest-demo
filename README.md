@@ -57,6 +57,27 @@ The app does not apply migrations on startup. Run them once as a deploy step bef
 docker run --rm --env-file prod.env nest-demo npm run migration:run:prod
 ```
 
+## Production deployment
+
+`docker-compose.prod.yml` runs the production image with Postgres, and applies pending migrations before the API starts. Create `prod.env` from `.env.example` with a strong `DB_PASSWORD`; it is not committed. The file sets `DB_HOST`, `DB_PORT` and `LOG_TRANSPORTS` itself.
+
+Build and push the image from another machine, as small instances can run out of memory while building. Match the instance's CPU architecture, for example `--platform linux/amd64` for `t3`:
+
+```bash
+API_IMAGE=registry.example.com/nest-demo docker compose -f docker-compose.prod.yml --env-file prod.env build
+docker push registry.example.com/nest-demo
+```
+
+Then, on the instance, with `docker-compose.prod.yml` and `prod.env` in the same directory:
+
+```bash
+export API_IMAGE=registry.example.com/nest-demo
+docker compose -f docker-compose.prod.yml --env-file prod.env pull api migrate
+docker compose -f docker-compose.prod.yml --env-file prod.env up -d --no-build
+```
+
+Postgres is not published to the host. The API is published on host port `80`, so restrict that port in the security group. `PORT` only sets the port inside the container.
+
 ## Configuration
 
 Settings are read from environment variables and `.env`; see `.env.example`. Real environment variables take precedence over `.env`.

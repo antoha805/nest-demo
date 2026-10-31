@@ -1,0 +1,57 @@
+x-api: &api
+  image: ${API_IMAGE:-nest-demo}
+  env_file: prod.env
+  environment: &api-environment
+    DB_HOST: postgres
+    DB_PORT: 5432
+    LOG_TRANSPORTS: stdout
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+
+services:
+  migrate:
+    <<: *api
+    command: npm run migration:run:prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *api
+    build:
+      context: .
+      target: prod
+    restart: unless-stopped
+    init: true
+    mem_limit: 256m
+    environment:
+      <<: *api-environment
+      NODE_OPTIONS: --max-old-space-size=192
+    ports:
+      - '80:${PORT:-3000}'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:?set in prod.env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set in prod.env}
+      POSTGRES_DB: ${DB_NAME:?set in prod.env}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    logging: *logging
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
