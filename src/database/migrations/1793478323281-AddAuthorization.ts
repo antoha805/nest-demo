@@ -58,16 +58,6 @@ export class AddAuthorization1793478323281 implements MigrationInterface {
     await queryRunner.query(
       `ALTER TABLE "user_permissions" ADD CONSTRAINT "FK_cf38f85e52ee274ba9a01901ed2" FOREIGN KEY ("permissionId") REFERENCES "permissions"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
     );
-
-    await queryRunner.query(
-      `INSERT INTO "permissions" ("name") VALUES ('categories.create'), ('categories.update'), ('categories.delete'), ('posts.create'), ('posts.update'), ('posts.delete'), ('users.read'), ('users.manage'), ('roles.read'), ('roles.manage')`,
-    );
-    await queryRunner.query(
-      `INSERT INTO "roles" ("name") VALUES ('admin'), ('editor')`,
-    );
-    await queryRunner.query(
-      `INSERT INTO "role_permissions" ("roleId", "permissionId") SELECT r."id", p."id" FROM "roles" r CROSS JOIN "permissions" p WHERE r."name" = 'admin' OR (r."name" = 'editor' AND (p."name" LIKE 'categories.%' OR p."name" LIKE 'posts.%'))`,
-    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

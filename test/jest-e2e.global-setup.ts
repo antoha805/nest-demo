@@ -2,6 +2,7 @@
 import './jest-e2e.setup';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import dataSource from './../src/database/data-source';
+import { syncPermissions } from './../src/database/sync-permissions';
 
 export default async function globalSetup() {
   const admin = new DataSource({
@@ -23,6 +24,7 @@ export default async function globalSetup() {
   await dataSource.initialize();
   try {
     await dataSource.runMigrations();
+    await dataSource.transaction(syncPermissions);
   } finally {
     await dataSource.destroy();
   }

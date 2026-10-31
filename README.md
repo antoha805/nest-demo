@@ -25,6 +25,7 @@ To run the API on the host instead, start only the database:
 npm install
 docker compose up -d --wait postgres
 npm run migration:run
+npm run permissions:sync
 npm run seed
 npm run start:dev
 ```
@@ -55,11 +56,12 @@ The app does not apply migrations on startup. Run them once as a deploy step bef
 
 ```bash
 docker run --rm --env-file prod.env nest-demo npm run migration:run:prod
+docker run --rm --env-file prod.env nest-demo npm run permissions:sync:prod
 ```
 
 ## Production deployment
 
-`docker-compose.prod.yml` runs the production image with Postgres, and applies pending migrations before the API starts. Create `prod.env` from `.env.example` with a strong `DB_PASSWORD`; it is not committed. The file sets `DB_HOST`, `DB_PORT` and `LOG_TRANSPORTS` itself.
+`docker-compose.prod.yml` runs the production image with Postgres, and applies pending migrations and syncs permissions before the API starts. Create `prod.env` from `.env.example` with a strong `DB_PASSWORD`; it is not committed. The file sets `DB_HOST`, `DB_PORT` and `LOG_TRANSPORTS` itself.
 
 Build and push the image from another machine, as small instances can run out of memory while building. Match the instance's CPU architecture, for example `--platform linux/amd64` for `t3`:
 
@@ -138,11 +140,11 @@ npm run make-admin -- alice@example.com
 
 In production, use `docker compose -f docker-compose.prod.yml --env-file prod.env exec api npm run make-admin:prod -- alice@example.com`.
 
-The migrations create two roles. `admin` has every permission and cannot be changed or deleted. `editor` can create, update and delete categories and posts.
+`npm run permissions:sync` stores the permissions from the code and two roles in the database. It runs after migrations on every `docker compose up` and deploy, and is safe to re-run. `admin` always gets every permission and cannot be changed or deleted. `editor` starts with permission to create, update and delete categories and posts, and is only created if it is missing, so edits made through the API are kept but a deleted `editor` role comes back.
 
 Every route requires a token unless marked `@Public()`. To protect a route, add `@RequirePermissions(PERMISSIONS.POSTS_CREATE)`, which responds with `403 Forbidden` if any listed permission is missing.
 
-To add a permission, add it to `src/roles/permission-names.ts`, and write a migration that inserts it and grants it to `admin`.
+To add a permission, add it to `src/roles/permission-names.ts`. The next sync inserts it and grants it to `admin`. Removing a name from that file does not delete the permission from the database, so write a migration for that.
 
 ## Endpoints
 

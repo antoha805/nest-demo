@@ -19,6 +19,8 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed": "ts-node src/database/seed.ts",
+    "permissions:sync": "ts-node src/database/sync-permissions.ts",
+    "permissions:sync:prod": "node dist/database/sync-permissions.js",
     "make-admin": "ts-node src/database/make-admin.ts",
     "make-admin:prod": "node dist/database/make-admin.js",
     "migration:generate": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:generate",

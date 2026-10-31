@@ -14,7 +14,7 @@ x-api: &api
 services:
   migrate:
     <<: *api
-    command: npm run migration:run:prod
+    command: sh -c "npm run migration:run:prod && npm run permissions:sync:prod"
     depends_on:
       postgres:
         condition: service_healthy
