@@ -8,6 +8,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
   app.setGlobalPrefix('api');
+  app.enableShutdownHooks();
   const config =
     app.get<ConfigService<EnvironmentVariables, true>>(ConfigService);
   await app.listen(config.get('PORT', { infer: true }));
