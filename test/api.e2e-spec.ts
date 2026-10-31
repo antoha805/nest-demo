@@ -478,6 +478,14 @@ describe('API (e2e)', () => {
       await expect(isListed(withToken(otherToken))).resolves.toBe(false);
       await expect(isListed(withToken(token))).resolves.toBe(true);
 
+      await withToken(token)
+        .patch('/api/posts/not-a-uuid')
+        .send({ title: 'X' })
+        .expect(400);
+      await withToken(token).delete('/api/posts/not-a-uuid').expect(400);
+      await withToken(token).delete(`/api/posts/${randomUUID()}`).expect(404);
+      await anonymous().delete(url).expect(401);
+
       await withToken(otherToken).patch(url).send({ title: 'X' }).expect(403);
       await withToken(otherToken).delete(url).expect(403);
       await withToken(token).patch(url).send({ published: true }).expect(403);

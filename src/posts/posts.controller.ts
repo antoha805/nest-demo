@@ -18,6 +18,7 @@ import { CaslAbilityFactory } from '../casl/casl-ability.factory';
 import { CheckPolicies } from '../casl/check-policies.decorator';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
+import { PostAccess } from './post-access.guard';
 import { Post as PostEntity } from './post.entity';
 import { PostsService, PostVisibility } from './posts.service';
 
@@ -31,10 +32,7 @@ export class PostsController {
   @Post()
   @CheckPolicies((ability) => ability.can('create', PostEntity))
   create(@Body() dto: CreatePostDto, @CurrentUser() user: AuthenticatedUser) {
-    const ability = this.caslAbilityFactory.createForUser(user);
-    if (dto.published && ability.cannot('publish', PostEntity)) {
-      throw new ForbiddenException('You cannot publish posts');
-    }
+    this.assertCanSetPublished(dto, user);
     return this.postsService.create(dto, user.id);
   }
 
@@ -54,47 +52,44 @@ export class PostsController {
   }
 
   @Patch(':id')
-  @CheckPolicies((ability) => ability.can('update', PostEntity))
-  async update(
+  @PostAccess('update')
+  update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePostDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    const ability = this.caslAbilityFactory.createForUser(user);
-    if (ability.cannot('update', await this.postsService.findOne(id))) {
-      throw new ForbiddenException();
-    }
-
-    const canPublish = ability.can('publish', PostEntity);
-    if (dto.published && !canPublish) {
-      throw new ForbiddenException('You cannot publish posts');
-    }
-    return this.postsService.update(id, dto, { keepPublished: canPublish });
+    this.assertCanSetPublished(dto, user);
+    return this.postsService.update(id, dto, {
+      keepPublished: this.canPublish(user),
+    });
   }
 
   @Delete(':id')
-  @CheckPolicies((ability) => ability.can('delete', PostEntity))
+  @PostAccess('delete')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    const ability = this.caslAbilityFactory.createForUser(user);
-    if (ability.cannot('delete', await this.postsService.findOne(id))) {
-      throw new ForbiddenException();
-    }
+  remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.postsService.remove(id);
+  }
+
+  private canPublish(user: AuthenticatedUser): boolean {
+    return this.caslAbilityFactory
+      .createForUser(user)
+      .can('publish', PostEntity);
+  }
+
+  private assertCanSetPublished(
+    { published }: { published?: boolean },
+    user: AuthenticatedUser,
+  ): void {
+    if (published && !this.canPublish(user)) {
+      throw new ForbiddenException('You cannot publish posts');
+    }
   }
 
   // Publishers have to see drafts in order to review them.
   private visibilityFor(user?: AuthenticatedUser): PostVisibility {
-    if (!user) {
-      return { includeDrafts: false };
-    }
-    const ability = this.caslAbilityFactory.createForUser(user);
-    return {
-      includeDrafts: ability.can('publish', PostEntity),
-      draftsByAuthorId: user.id,
-    };
+    return user
+      ? { includeDrafts: this.canPublish(user), draftsByAuthorId: user.id }
+      : { includeDrafts: false };
   }
 }

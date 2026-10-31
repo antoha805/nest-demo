@@ -5,7 +5,6 @@ export type PolicyHandler = (ability: AppAbility) => boolean;
 
 export const CHECK_POLICIES_KEY = 'checkPolicies';
 
-// Checking a class, like can('update', Post), passes if the user can do it to
-// any post. Rules that depend on the record are checked once it is loaded.
+// For checks that do not depend on a record. See PostAccess for those that do.
 export const CheckPolicies = (...handlers: PolicyHandler[]) =>
   SetMetadata(CHECK_POLICIES_KEY, handlers);
