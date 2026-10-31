@@ -1,0 +1,8 @@
+[Unit]
+Description=Deploy the latest nest-demo image
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/nest-demo-auto-deploy

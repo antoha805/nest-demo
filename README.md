@@ -78,6 +78,21 @@ docker compose -f docker-compose.prod.yml --env-file prod.env up -d --no-build
 
 Postgres is not published to the host. The API is published on host port `80`, so restrict that port in the security group. `PORT` only sets the port inside the container.
 
+### Automatic deployment
+
+Each push to `main` runs the checks in `.github/workflows/deploy.yml`, then publishes an Arm image to `ghcr.io/antoha805/nest-demo`. A systemd timer on the instance checks for a new image and compose file every minute, and applies them with pending migrations.
+
+To set up an instance, copy the `deploy` directory to it, add `API_IMAGE=ghcr.io/antoha805/nest-demo` to `prod.env`, then run:
+
+```bash
+sudo install -m 755 deploy/auto-deploy.sh /usr/local/bin/nest-demo-auto-deploy
+sudo cp deploy/nest-demo-deploy.service deploy/nest-demo-deploy.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now nest-demo-deploy.timer
+```
+
+A failed deploy does not show up in GitHub. To see what the instance did, run `journalctl -u nest-demo-deploy -n 50`.
+
 ## Configuration
 
 Settings are read from environment variables and `.env`; see `.env.example`. Real environment variables take precedence over `.env`.
