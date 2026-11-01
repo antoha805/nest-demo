@@ -78,7 +78,7 @@ docker compose -f docker-compose.prod.yml --env-file prod.env pull api migrate
 docker compose -f docker-compose.prod.yml --env-file prod.env up -d --no-build
 ```
 
-Postgres is not published to the host. The API is published on host port `80`, so restrict that port in the security group. `PORT` only sets the port inside the container.
+Only Caddy is published to the host. It serves the API over HTTPS on port `443` and redirects port `80` to it, using a free Let's Encrypt certificate that it renews itself. Set `DOMAIN` in `prod.env` to a name that points to the instance, and allow both ports in the security group. `PORT` only sets the port inside the container.
 
 ### Automatic deployment
 

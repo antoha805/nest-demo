@@ -30,11 +30,24 @@ services:
     environment:
       <<: *api-environment
       NODE_OPTIONS: --max-old-space-size=192
-    ports:
-      - '80:${PORT:-3000}'
     depends_on:
       migrate:
         condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2-alpine
+    command: caddy reverse-proxy --from ${DOMAIN:?set in prod.env} --to api:${PORT:-3000}
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logging
+    depends_on:
+      - api
 
   postgres:
     image: postgres:18-alpine
@@ -55,3 +68,5 @@ services:
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:

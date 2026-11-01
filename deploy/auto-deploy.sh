@@ -29,6 +29,6 @@ running=$(docker inspect "$container" --format '{{.Image}}' 2>/dev/null || true)
 
 if [ "$latest" != "$running" ] || [ "$compose_changed" = true ]; then
   echo "Deploying $latest"
-  "${compose[@]}" up -d --no-build --wait api
+  "${compose[@]}" up -d --no-build --wait caddy
   docker image prune -f >/dev/null
 fi
