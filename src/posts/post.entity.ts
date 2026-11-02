@@ -50,7 +50,7 @@ export class Post {
   })
   likesCount: number;
 
-  // Only loaded by queries that go through selectMyLikeAt.
+  // Only loaded by PostsService.queryForUser, which sets the parameter.
   @VirtualColumn({
     type: 'timestamptz',
     select: false,
@@ -66,7 +66,7 @@ export class Post {
   })
   commentsCount: number;
 
-  // When the user last commented. Only loaded by PostsService.queryForUser.
+  // When the user last commented. Also only loaded by queryForUser.
   @VirtualColumn({
     type: 'timestamptz',
     select: false,

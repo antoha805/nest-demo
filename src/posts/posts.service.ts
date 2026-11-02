@@ -12,7 +12,6 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { paginate, Paginated } from '../common/paginated';
 import { LikeableType } from '../likes/like.entity';
 import { LikesService } from '../likes/likes.service';
-import { selectMyLikeAt } from '../likes/select-my-like-at';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { Post } from './post.entity';
@@ -118,14 +117,15 @@ export class PostsService {
   }
 
   private queryForUser(options: FindManyOptions<Post>, userId?: string) {
-    return selectMyLikeAt(
-      this.postsRepository
-        .createQueryBuilder('post')
-        .setFindOptions({ ...options, relations: { category: true } })
-        .addSelect('post.myLastCommentAt')
-        .setParameter('myLastCommentUserId', userId ?? null),
-      userId,
-    );
+    return this.postsRepository
+      .createQueryBuilder('post')
+      .setFindOptions({ ...options, relations: { category: true } })
+      .addSelect(['post.myLikeAt', 'post.myLastCommentAt'])
+      .setParameters({
+        // Without a user the subqueries match nothing, which gives null.
+        myLikeUserId: userId ?? null,
+        myLastCommentUserId: userId ?? null,
+      });
   }
 
   private findOneForUser(

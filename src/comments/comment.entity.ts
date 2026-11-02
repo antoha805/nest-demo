@@ -43,7 +43,7 @@ export class Comment {
   })
   likesCount: number;
 
-  // Only loaded by queries that go through selectMyLikeAt.
+  // Only loaded by CommentsService.queryForUser, which sets the parameter.
   @VirtualColumn({
     type: 'timestamptz',
     select: false,
