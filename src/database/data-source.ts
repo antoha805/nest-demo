@@ -3,7 +3,9 @@ import { extname, join } from 'node:path';
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { Category } from '../categories/category.entity';
+import { Comment } from '../comments/comment.entity';
 import { validate } from '../config/env.validation';
+import { Like } from '../likes/like.entity';
 import { Post } from '../posts/post.entity';
 import { Permission } from '../roles/permission.entity';
 import { Role } from '../roles/role.entity';
@@ -23,7 +25,7 @@ export default new DataSource({
   username: env.DB_USERNAME,
   password: env.DB_PASSWORD,
   database: env.DB_NAME,
-  entities: [Category, Post, User, Role, Permission],
+  entities: [Category, Post, Comment, Like, User, Role, Permission],
   // Match this file's extension: dist also contains .d.ts files.
   migrations: [join(__dirname, 'migrations', `*${extname(__filename)}`)],
 });

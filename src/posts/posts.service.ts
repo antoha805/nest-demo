@@ -5,15 +5,16 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
+import { AuthenticatedUser } from '../auth/authenticated-user';
+import { CaslAbilityFactory } from '../casl/casl-ability.factory';
 import { CategoriesService } from '../categories/categories.service';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { paginated, Paginated, paginationOptions } from '../common/paginated';
+import { LikeableType } from '../likes/like.entity';
+import { LikesService } from '../likes/likes.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { Post } from './post.entity';
-
-export interface PostVisibility {
-  includeDrafts: boolean;
-  draftsByAuthorId?: string;
-}
 
 @Injectable()
 export class PostsService {
@@ -21,6 +22,8 @@ export class PostsService {
     @InjectRepository(Post)
     private readonly postsRepository: Repository<Post>,
     private readonly categoriesService: CategoriesService,
+    private readonly caslAbilityFactory: CaslAbilityFactory,
+    private readonly likesService: LikesService,
   ) {}
 
   async create(dto: CreatePostDto, authorId: string): Promise<Post> {
@@ -28,20 +31,34 @@ export class PostsService {
     const { id } = await this.postsRepository.save(
       this.postsRepository.create({ ...dto, authorId }),
     );
-    return this.findOne(id);
+    return this.withLikedByMeAt(await this.findOne(id), authorId);
   }
 
-  findAll(visibility: PostVisibility): Promise<Post[]> {
-    return this.postsRepository.find({
-      where: this.visibleWhere(visibility),
+  async findAll(
+    query: PaginationQueryDto,
+    user?: AuthenticatedUser,
+  ): Promise<Paginated<Post>> {
+    const [posts, total] = await this.postsRepository.findAndCount({
+      where: this.visibleWhere(user),
       relations: { category: true },
-      order: { createdAt: 'DESC' },
+      // The id keeps pages stable when posts share a timestamp.
+      order: { createdAt: 'DESC', id: 'DESC' },
+      ...paginationOptions(query),
     });
+    await this.likesService.withLikedByMeAt(LikeableType.POST, posts, user?.id);
+    return paginated(posts, total, query);
   }
 
-  findVisible(id: string, visibility: PostVisibility): Promise<Post> {
+  async findVisibleForUser(
+    id: string,
+    user?: AuthenticatedUser,
+  ): Promise<Post> {
+    return this.withLikedByMeAt(await this.findVisible(id, user), user?.id);
+  }
+
+  findVisible(id: string, user?: AuthenticatedUser): Promise<Post> {
     return this.postsRepository.findOneOrFail({
-      where: this.visibleWhere(visibility).map((where) => ({ ...where, id })),
+      where: this.visibleWhere(user).map((where) => ({ ...where, id })),
       relations: { category: true },
     });
   }
@@ -56,7 +73,13 @@ export class PostsService {
   async update(
     id: string,
     dto: UpdatePostDto,
-    { keepPublished }: { keepPublished: boolean },
+    {
+      keepPublished,
+      userId,
+    }: {
+      keepPublished: boolean;
+      userId: string;
+    },
   ): Promise<Post> {
     if (dto.categoryId) {
       await this.assertCategoryExists(dto.categoryId);
@@ -71,7 +94,7 @@ export class PostsService {
       throw new NotFoundException(`Post ${id} not found`);
     }
     await this.postsRepository.save(post);
-    return this.findOne(id);
+    return this.withLikedByMeAt(await this.findOne(id), userId);
   }
 
   async remove(id: string): Promise<void> {
@@ -81,16 +104,33 @@ export class PostsService {
     }
   }
 
-  private visibleWhere({
-    includeDrafts,
-    draftsByAuthorId,
-  }: PostVisibility): FindOptionsWhere<Post>[] {
-    if (includeDrafts) {
-      return [{}];
+  async like(id: string, user: AuthenticatedUser): Promise<void> {
+    await this.findVisible(id, user);
+    await this.likesService.like(LikeableType.POST, id, user.id);
+  }
+
+  async unlike(id: string, user: AuthenticatedUser): Promise<void> {
+    await this.findVisible(id, user);
+    await this.likesService.unlike(LikeableType.POST, id, user.id);
+  }
+
+  private async withLikedByMeAt(post: Post, userId?: string): Promise<Post> {
+    const [result] = await this.likesService.withLikedByMeAt(
+      LikeableType.POST,
+      [post],
+      userId,
+    );
+    return result;
+  }
+
+  private visibleWhere(user?: AuthenticatedUser): FindOptionsWhere<Post>[] {
+    if (!user) {
+      return [{ published: true }];
     }
-    return draftsByAuthorId
-      ? [{ published: true }, { authorId: draftsByAuthorId }]
-      : [{ published: true }];
+    // Publishers have to see drafts in order to review them.
+    return this.caslAbilityFactory.createForUser(user).can('publish', Post)
+      ? [{}]
+      : [{ published: true }, { authorId: user.id }];
   }
 
   private async assertCategoryExists(categoryId: string): Promise<void> {

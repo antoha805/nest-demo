@@ -1,4 +1,5 @@
 import { AuthenticatedUser } from '../auth/authenticated-user';
+import { Comment } from '../comments/comment.entity';
 import { Post } from '../posts/post.entity';
 import { PERMISSIONS, PERMISSION_NAMES } from '../roles/permission-names';
 import { CaslAbilityFactory } from './casl-ability.factory';
@@ -56,6 +57,20 @@ describe('CaslAbilityFactory', () => {
 
     expect(ability.can('delete', postBy('me'))).toBe(false);
     expect(ability.can('publish', Post)).toBe(false);
+  });
+
+  it('limits comment edits to the author, even for moderators', () => {
+    const ability = abilityFor(
+      PERMISSIONS.COMMENTS_UPDATE_OWN,
+      PERMISSIONS.COMMENTS_DELETE_ALL,
+    );
+    const commentBy = (authorId: string | null) =>
+      Object.assign(new Comment(), { authorId });
+
+    expect(ability.can('update', commentBy('me'))).toBe(true);
+    expect(ability.can('update', commentBy('other'))).toBe(false);
+    expect(ability.can('delete', commentBy('other'))).toBe(true);
+    expect(ability.can('delete', commentBy(null))).toBe(true);
   });
 
   it('ignores names missing from the code', () => {

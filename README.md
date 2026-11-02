@@ -148,32 +148,40 @@ To add a permission, add it to `src/roles/permission-names.ts` and its rules to 
 
 ## Endpoints
 
-| Method | Path                         | Permission                               | Description                    |
-| ------ | ---------------------------- | ---------------------------------------- | ------------------------------ |
-| POST   | `/api/auth/register`         | Public                                   | Create an account              |
-| POST   | `/api/auth/login`            | Public                                   | Get an access token            |
-| GET    | `/api/auth/me`               | Any logged-in user                       | Get your roles and permissions |
-| POST   | `/api/categories`            | `categories.create`                      | Create a category              |
-| GET    | `/api/categories`            | Public                                   | List categories                |
-| GET    | `/api/categories/:id`        | Public                                   | Get a category                 |
-| PATCH  | `/api/categories/:id`        | `categories.update`                      | Update a category              |
-| DELETE | `/api/categories/:id`        | `categories.delete`                      | Delete a category              |
-| POST   | `/api/posts`                 | `posts.create`                           | Create a post                  |
-| GET    | `/api/posts`                 | Public                                   | List posts                     |
-| GET    | `/api/posts/:id`             | Public                                   | Get a post                     |
-| PATCH  | `/api/posts/:id`             | `posts.update.all` or `posts.update.own` | Update a post                  |
-| DELETE | `/api/posts/:id`             | `posts.delete.all` or `posts.delete.own` | Delete a post                  |
-| GET    | `/api/users`                 | `users.read`                             | List users                     |
-| GET    | `/api/users/:id`             | `users.read`                             | Get a user                     |
-| PUT    | `/api/users/:id/roles`       | `users.manage`                           | Replace a user's roles         |
-| PUT    | `/api/users/:id/permissions` | `users.manage`                           | Replace direct permissions     |
-| DELETE | `/api/users/:id`             | `users.manage`                           | Delete a user                  |
-| POST   | `/api/roles`                 | `roles.manage`                           | Create a role                  |
-| GET    | `/api/roles`                 | `roles.read`                             | List roles                     |
-| GET    | `/api/roles/:id`             | `roles.read`                             | Get a role                     |
-| PATCH  | `/api/roles/:id`             | `roles.manage`                           | Update a role                  |
-| DELETE | `/api/roles/:id`             | `roles.manage`                           | Delete a role                  |
-| GET    | `/api/permissions`           | `roles.read`                             | List permissions               |
+| Method | Path                          | Permission                                     | Description                     |
+| ------ | ----------------------------- | ---------------------------------------------- | ------------------------------- |
+| POST   | `/api/auth/register`          | Public                                         | Create an account               |
+| POST   | `/api/auth/login`             | Public                                         | Get an access token             |
+| GET    | `/api/auth/me`                | Any logged-in user                             | Get your roles and permissions  |
+| POST   | `/api/categories`             | `categories.create`                            | Create a category               |
+| GET    | `/api/categories`             | Public                                         | List categories                 |
+| GET    | `/api/categories/:id`         | Public                                         | Get a category                  |
+| PATCH  | `/api/categories/:id`         | `categories.update`                            | Update a category               |
+| DELETE | `/api/categories/:id`         | `categories.delete`                            | Delete a category               |
+| POST   | `/api/posts`                  | `posts.create`                                 | Create a post                   |
+| GET    | `/api/posts`                  | Public                                         | List posts                      |
+| GET    | `/api/posts/:id`              | Public                                         | Get a post                      |
+| PATCH  | `/api/posts/:id`              | `posts.update.all` or `posts.update.own`       | Update a post                   |
+| DELETE | `/api/posts/:id`              | `posts.delete.all` or `posts.delete.own`       | Delete a post                   |
+| PUT    | `/api/posts/:id/like`         | `likes.create`                                 | Like a post                     |
+| DELETE | `/api/posts/:id/like`         | `likes.delete`                                 | Remove your like from a post    |
+| POST   | `/api/posts/:postId/comments` | `comments.create`                              | Comment on a post               |
+| GET    | `/api/posts/:postId/comments` | Public                                         | List a post's comments          |
+| PATCH  | `/api/comments/:id`           | `comments.update.own`                          | Update your comment             |
+| DELETE | `/api/comments/:id`           | `comments.delete.all` or `comments.delete.own` | Delete a comment                |
+| PUT    | `/api/comments/:id/like`      | `likes.create`                                 | Like a comment                  |
+| DELETE | `/api/comments/:id/like`      | `likes.delete`                                 | Remove your like from a comment |
+| GET    | `/api/users`                  | `users.read`                                   | List users                      |
+| GET    | `/api/users/:id`              | `users.read`                                   | Get a user                      |
+| PUT    | `/api/users/:id/roles`        | `users.manage`                                 | Replace a user's roles          |
+| PUT    | `/api/users/:id/permissions`  | `users.manage`                                 | Replace direct permissions      |
+| DELETE | `/api/users/:id`              | `users.manage`                                 | Delete a user                   |
+| POST   | `/api/roles`                  | `roles.manage`                                 | Create a role                   |
+| GET    | `/api/roles`                  | `roles.read`                                   | List roles                      |
+| GET    | `/api/roles/:id`              | `roles.read`                                   | Get a role                      |
+| PATCH  | `/api/roles/:id`              | `roles.manage`                                 | Update a role                   |
+| DELETE | `/api/roles/:id`              | `roles.manage`                                 | Delete a role                   |
+| GET    | `/api/permissions`            | `roles.read`                                   | List permissions                |
 
 A category that still has posts cannot be deleted (`409 Conflict`).
 
@@ -182,6 +190,20 @@ A post's `authorId` is set to the logged-in user when it is created and cannot b
 The `.all` permissions apply to every post, and the `.own` ones only to posts the user wrote. Posts with no author need `.all`.
 
 Posts are drafts until published, which requires `posts.publish`. Without it, a user can only create drafts, and editing a published post turns it back into a draft. Published posts are public. Drafts are visible only to their author and to users with `posts.publish`, and return `404 Not Found` to anyone else, so send the token on `GET` requests to see them.
+
+Comments and likes follow the post: every route above returns `404 Not Found` if the user cannot read the post, including for a comment they wrote on a post that has since become a draft. Comments stay when their author is deleted, with `authorId` set to `null`, and are deleted with their post. Comments can only be edited by their author; `comments.delete.all` is for moderation.
+
+Liking and unliking are idempotent and respond with `204 No Content`. Posts and comments return their total as `likesCount`, and `likedByMeAt` holds when the logged-in user liked them, or `null` if they have not or no token was sent. The `likes` table is polymorphic: `likeableType` and `likeableId` point to a post or comment. As Postgres cannot enforce a foreign key on that, database triggers delete the likes along with their post or comment. Adding a new likeable type needs a new enum value and such a trigger.
+
+## Pagination
+
+`GET /api/posts` and `GET /api/posts/:postId/comments` accept `page` (default `1`) and `limit` (default `20`, at most `100`), and respond with:
+
+```json
+{ "data": [], "total": 42, "page": 1, "limit": 20, "totalPages": 3 }
+```
+
+Posts are listed newest first and comments oldest first. A page past the end has an empty `data`.
 
 ## Seeding
 

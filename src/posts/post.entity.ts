@@ -6,6 +6,7 @@ import {
   ManyToOne,
   PrimaryColumn,
   UpdateDateColumn,
+  VirtualColumn,
 } from 'typeorm';
 import { Category } from '../categories/category.entity';
 import { User } from '../users/user.entity';
@@ -41,6 +42,16 @@ export class Post {
   @ManyToOne(() => User, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'authorId' })
   author: User | null;
+
+  @VirtualColumn({
+    type: 'int',
+    query: (alias) =>
+      `SELECT COUNT(*)::int FROM "likes" WHERE "likes"."likeableType" = 'post' AND "likes"."likeableId" = ${alias}."id"`,
+  })
+  likesCount: number;
+
+  // Not a column: set by LikesService for the user making the request.
+  likedByMeAt: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

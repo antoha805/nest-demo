@@ -7,6 +7,9 @@ import { DataSource } from 'typeorm';
 import { AppModule } from './../src/app.module';
 import { AuthService } from './../src/auth/auth.service';
 import { Category } from './../src/categories/category.entity';
+import { Comment } from './../src/comments/comment.entity';
+import { Paginated } from './../src/common/paginated';
+import { Like } from './../src/likes/like.entity';
 import { Post } from './../src/posts/post.entity';
 import {
   ADMIN_ROLE,
@@ -198,6 +201,11 @@ describe('API (e2e)', () => {
         email,
         roles: ['member'],
         permissions: [
+          PERMISSIONS.COMMENTS_CREATE,
+          PERMISSIONS.COMMENTS_DELETE_OWN,
+          PERMISSIONS.COMMENTS_UPDATE_OWN,
+          PERMISSIONS.LIKES_CREATE,
+          PERMISSIONS.LIKES_DELETE,
           PERMISSIONS.POSTS_CREATE,
           PERMISSIONS.POSTS_DELETE_OWN,
           PERMISSIONS.POSTS_UPDATE_OWN,
@@ -466,7 +474,9 @@ describe('API (e2e)', () => {
       const url = `/api/posts/${id}`;
       const isListed = async (client: ReturnType<typeof anonymous>) => {
         const response = await client.get('/api/posts').expect(200);
-        return (response.body as Post[]).some((post) => post.id === id);
+        return (response.body as Paginated<Post>).data.some(
+          (post) => post.id === id,
+        );
       };
 
       await anonymous().get(url).expect(404);
@@ -504,6 +514,348 @@ describe('API (e2e)', () => {
 
       await withToken(token).delete(url).expect(204);
       await http().delete(`/api/categories/${category.id}`).expect(204);
+    });
+
+    describe('comments and likes', () => {
+      const createPost = async (token: string, published = false) => {
+        const category = await createCategory();
+        const created = await withToken(token)
+          .post('/api/posts')
+          .send({
+            title: 'T',
+            content: 'C',
+            categoryId: category.id,
+            published,
+          })
+          .expect(201);
+        return created.body as Post;
+      };
+
+      const createComment = async (token: string, postId: string) => {
+        const created = await withToken(token)
+          .post(`/api/posts/${postId}/comments`)
+          .send({ content: 'Nice' })
+          .expect(201);
+        return created.body as Comment;
+      };
+
+      const countLikes = (likeableId: string) =>
+        app.get(DataSource).manager.countBy(Like, { likeableId });
+
+      it('lets members manage their own comments', async () => {
+        const { token } = await register();
+        const { token: otherToken } = await register();
+        const { id: authorId } = await currentUser(token);
+        const post = await createPost(adminToken, true);
+        const url = `/api/posts/${post.id}/comments`;
+
+        await anonymous().post(url).send({ content: 'Nice' }).expect(401);
+        await withToken(token).post(url).send({ content: '' }).expect(400);
+        await withToken(token)
+          .post(url)
+          .send({ content: 'Nice', authorId: randomUUID() })
+          .expect(400);
+        await withToken(token)
+          .post(`/api/posts/${randomUUID()}/comments`)
+          .send({ content: 'Nice' })
+          .expect(404);
+
+        const comment = await createComment(token, post.id);
+        expect(comment).toMatchObject({
+          content: 'Nice',
+          postId: post.id,
+          authorId,
+          likesCount: 0,
+        });
+
+        const listed = await anonymous().get(url).expect(200);
+        expect(
+          (listed.body as Paginated<Comment>).data.map((c) => c.id),
+        ).toEqual([comment.id]);
+
+        const commentUrl = `/api/comments/${comment.id}`;
+        await anonymous().patch(commentUrl).send({ content: 'X' }).expect(401);
+        await withToken(otherToken)
+          .patch(commentUrl)
+          .send({ content: 'X' })
+          .expect(403);
+        await withToken(otherToken).delete(commentUrl).expect(403);
+        await http().patch(commentUrl).send({ content: 'X' }).expect(403);
+
+        const edited = await withToken(token)
+          .patch(commentUrl)
+          .send({ content: 'Edited' })
+          .expect(200);
+        expect(edited.body).toMatchObject({ content: 'Edited', authorId });
+
+        await withToken(token).delete(commentUrl).expect(204);
+        await withToken(token).delete(commentUrl).expect(404);
+        await withToken(token).delete('/api/comments/not-a-uuid').expect(400);
+      });
+
+      it('lets moderators delete any comment', async () => {
+        const { token } = await register();
+        const post = await createPost(adminToken, true);
+        const comment = await createComment(token, post.id);
+
+        await http().delete(`/api/comments/${comment.id}`).expect(204);
+      });
+
+      it('requires the permissions', async () => {
+        const { token } = await register();
+        const { id } = await currentUser(token);
+        const post = await createPost(adminToken, true);
+        const comment = await createComment(adminToken, post.id);
+        await http()
+          .put(`/api/users/${id}/roles`)
+          .send({ roles: [] })
+          .expect(200);
+
+        await withToken(token)
+          .post(`/api/posts/${post.id}/comments`)
+          .send({ content: 'Nice' })
+          .expect(403);
+        await withToken(token).put(`/api/posts/${post.id}/like`).expect(403);
+        await withToken(token).delete(`/api/posts/${post.id}/like`).expect(403);
+        await withToken(token)
+          .put(`/api/comments/${comment.id}/like`)
+          .expect(403);
+      });
+
+      it('counts one like per user on posts and comments', async () => {
+        const { token } = await register();
+        const { token: otherToken } = await register();
+        const post = await createPost(adminToken, true);
+        const comment = await createComment(token, post.id);
+        const postUrl = `/api/posts/${post.id}`;
+        const commentsUrl = `${postUrl}/comments`;
+        const postLikes = async () => {
+          const response = await anonymous().get(postUrl).expect(200);
+          return (response.body as Post).likesCount;
+        };
+        const commentLikes = async () => {
+          const response = await anonymous().get(commentsUrl).expect(200);
+          return (response.body as Paginated<Comment>).data[0].likesCount;
+        };
+
+        await anonymous().put(`${postUrl}/like`).expect(401);
+        await expect(postLikes()).resolves.toBe(0);
+
+        await withToken(token).put(`${postUrl}/like`).expect(204);
+        await withToken(token).put(`${postUrl}/like`).expect(204);
+        await withToken(otherToken).put(`${postUrl}/like`).expect(204);
+        await expect(postLikes()).resolves.toBe(2);
+        await expect(commentLikes()).resolves.toBe(0);
+
+        await withToken(token)
+          .put(`/api/comments/${comment.id}/like`)
+          .expect(204);
+        await expect(commentLikes()).resolves.toBe(1);
+        await expect(postLikes()).resolves.toBe(2);
+
+        await withToken(token).delete(`${postUrl}/like`).expect(204);
+        await withToken(token).delete(`${postUrl}/like`).expect(204);
+        await expect(postLikes()).resolves.toBe(1);
+
+        await withToken(token)
+          .put(`/api/posts/${randomUUID()}/like`)
+          .expect(404);
+        await withToken(token)
+          .put(`/api/comments/${randomUUID()}/like`)
+          .expect(404);
+        await withToken(token).put('/api/posts/not-a-uuid/like').expect(400);
+      });
+
+      it('hides comments and likes of posts the user cannot read', async () => {
+        const { token: authorToken } = await register();
+        const { token: otherToken } = await register();
+        const post = await createPost(adminToken, true);
+        const comment = await createComment(authorToken, post.id);
+        const draft = await createPost(authorToken);
+        const postUrl = `/api/posts/${draft.id}`;
+
+        await anonymous().get(`${postUrl}/comments`).expect(404);
+        await withToken(otherToken).get(`${postUrl}/comments`).expect(404);
+        await withToken(otherToken)
+          .post(`${postUrl}/comments`)
+          .send({ content: 'Nice' })
+          .expect(404);
+        await withToken(otherToken).put(`${postUrl}/like`).expect(404);
+
+        await createComment(authorToken, draft.id);
+        await withToken(authorToken).put(`${postUrl}/like`).expect(204);
+        await withToken(authorToken).get(`${postUrl}/comments`).expect(200);
+
+        await http()
+          .patch(`/api/posts/${post.id}`)
+          .send({ published: false })
+          .expect(200);
+        const commentUrl = `/api/comments/${comment.id}`;
+        await withToken(otherToken).put(`${commentUrl}/like`).expect(404);
+        await withToken(otherToken).delete(commentUrl).expect(404);
+        await withToken(authorToken)
+          .patch(commentUrl)
+          .send({ content: 'X' })
+          .expect(404);
+      });
+
+      it('deletes likes along with what they point to', async () => {
+        const { token } = await register();
+        const { id: userId } = await currentUser(token);
+        const post = await createPost(adminToken, true);
+        const other = await createPost(adminToken, true);
+        const kept = await createComment(adminToken, other.id);
+        const removed = await createComment(adminToken, other.id);
+        const cascaded = await createComment(adminToken, post.id);
+
+        await withToken(token).put(`/api/posts/${post.id}/like`).expect(204);
+        await withToken(token).put(`/api/comments/${kept.id}/like`).expect(204);
+        await withToken(token)
+          .put(`/api/comments/${removed.id}/like`)
+          .expect(204);
+        await withToken(token)
+          .put(`/api/comments/${cascaded.id}/like`)
+          .expect(204);
+
+        await http().delete(`/api/comments/${removed.id}`).expect(204);
+        await expect(countLikes(removed.id)).resolves.toBe(0);
+        await expect(countLikes(kept.id)).resolves.toBe(1);
+
+        await http().delete(`/api/posts/${post.id}`).expect(204);
+        await expect(countLikes(post.id)).resolves.toBe(0);
+        await expect(countLikes(cascaded.id)).resolves.toBe(0);
+        await expect(countLikes(kept.id)).resolves.toBe(1);
+
+        await http().delete(`/api/users/${userId}`).expect(204);
+        await expect(countLikes(kept.id)).resolves.toBe(0);
+      });
+
+      it('paginates posts and comments', async () => {
+        const post = await createPost(adminToken, true);
+        const url = `/api/posts/${post.id}/comments`;
+        const ids: string[] = [];
+        for (let i = 0; i < 3; i++) {
+          ids.push((await createComment(adminToken, post.id)).id);
+        }
+        const page = async (query: string) => {
+          const response = await anonymous()
+            .get(url + query)
+            .expect(200);
+          return response.body as Paginated<Comment>;
+        };
+
+        const first = await page('?limit=2');
+        expect(first).toMatchObject({
+          total: 3,
+          page: 1,
+          limit: 2,
+          totalPages: 2,
+        });
+        expect(first.data.map((c) => c.id)).toEqual(ids.slice(0, 2));
+
+        const second = await page('?limit=2&page=2');
+        expect(second.page).toBe(2);
+        expect(second.data.map((c) => c.id)).toEqual(ids.slice(2));
+
+        const beyond = await page('?limit=2&page=3');
+        expect(beyond).toMatchObject({ data: [], total: 3 });
+
+        await expect(page('')).resolves.toMatchObject({ page: 1, limit: 20 });
+
+        const posts = await anonymous().get('/api/posts?limit=1').expect(200);
+        const { data, limit, total } = posts.body as Paginated<Post>;
+        expect(data).toHaveLength(1);
+        expect(limit).toBe(1);
+        expect(total).toBeGreaterThan(1);
+        expect(data[0].category).toBeDefined();
+
+        for (const query of [
+          'limit=0',
+          'limit=101',
+          'limit=x',
+          'page=0',
+          'page=1.5',
+          'page=1e300',
+          'unknown=1',
+        ]) {
+          await anonymous().get(`/api/posts?${query}`).expect(400);
+          await anonymous().get(`${url}?${query}`).expect(400);
+        }
+      });
+
+      it('tells each user when they liked something', async () => {
+        const { token } = await register();
+        const { token: otherToken } = await register();
+        const post = await createPost(adminToken, true);
+        const comment = await createComment(adminToken, post.id);
+        const postUrl = `/api/posts/${post.id}`;
+        const commentUrl = `/api/comments/${comment.id}`;
+
+        expect(post.likedByMeAt).toBeNull();
+        expect(comment.likedByMeAt).toBeNull();
+
+        const likedAt = async (client: ReturnType<typeof anonymous>) => {
+          const [single, posts, comments] = await Promise.all([
+            client.get(postUrl).expect(200),
+            client.get('/api/posts?limit=100').expect(200),
+            client.get(`${postUrl}/comments`).expect(200),
+          ]);
+          const listed = (posts.body as Paginated<Post>).data.find(
+            ({ id }) => id === post.id,
+          );
+          return {
+            post: (single.body as Post).likedByMeAt,
+            listedPost: listed?.likedByMeAt,
+            listedComment: (comments.body as Paginated<Comment>).data[0]
+              .likedByMeAt,
+          };
+        };
+        const notLiked = { post: null, listedPost: null, listedComment: null };
+
+        await expect(likedAt(withToken(token))).resolves.toEqual(notLiked);
+
+        await withToken(token).put(`${postUrl}/like`).expect(204);
+        await withToken(token).put(`${commentUrl}/like`).expect(204);
+
+        const liked = await likedAt(withToken(token));
+        expect(
+          new Date(liked.post as unknown as string).getTime(),
+        ).not.toBeNaN();
+        expect(liked.listedPost).toBe(liked.post);
+        expect(typeof liked.listedComment).toBe('string');
+
+        await expect(likedAt(withToken(otherToken))).resolves.toEqual(notLiked);
+        await expect(likedAt(anonymous())).resolves.toEqual(notLiked);
+
+        await withToken(token).put(`${postUrl}/like`).expect(204);
+        await expect(likedAt(withToken(token))).resolves.toEqual(liked);
+
+        const edited = await http()
+          .patch(postUrl)
+          .send({ title: 'Edited' })
+          .expect(200);
+        expect(edited.body).toMatchObject({ likesCount: 1, likedByMeAt: null });
+
+        await withToken(token).delete(`${postUrl}/like`).expect(204);
+        await withToken(token).delete(`${commentUrl}/like`).expect(204);
+        await expect(likedAt(withToken(token))).resolves.toEqual(notLiked);
+      });
+
+      it('keeps comments of deleted users', async () => {
+        const { token } = await register();
+        const { id: userId } = await currentUser(token);
+        const post = await createPost(adminToken, true);
+        const comment = await createComment(token, post.id);
+
+        await http().delete(`/api/users/${userId}`).expect(204);
+
+        const listed = await anonymous()
+          .get(`/api/posts/${post.id}/comments`)
+          .expect(200);
+        expect((listed.body as Paginated<Comment>).data).toMatchObject([
+          { id: comment.id, authorId: null },
+        ]);
+      });
     });
 
     it('protects the member role', async () => {
