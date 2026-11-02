@@ -17,7 +17,6 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { CheckPolicies } from '../casl/check-policies.decorator';
 import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
-import { Like } from '../likes/like.entity';
 import { CommentAccess } from './comment-access.guard';
 import { Comment } from './comment.entity';
 import { CommentsService } from './comments.service';
@@ -66,7 +65,7 @@ export class CommentsController {
   }
 
   @Put('comments/:id/like')
-  @CheckPolicies((ability) => ability.can('create', Like))
+  @CheckPolicies((ability) => ability.can('like', Comment))
   @HttpCode(HttpStatus.NO_CONTENT)
   like(
     @Param('id', ParseUUIDPipe) id: string,
@@ -76,7 +75,7 @@ export class CommentsController {
   }
 
   @Delete('comments/:id/like')
-  @CheckPolicies((ability) => ability.can('delete', Like))
+  @CheckPolicies((ability) => ability.can('like', Comment))
   @HttpCode(HttpStatus.NO_CONTENT)
   unlike(
     @Param('id', ParseUUIDPipe) id: string,

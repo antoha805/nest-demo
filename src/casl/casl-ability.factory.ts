@@ -9,20 +9,14 @@ import { Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '../auth/authenticated-user';
 import { Category } from '../categories/category.entity';
 import { Comment } from '../comments/comment.entity';
-import { Like } from '../likes/like.entity';
 import { Post } from '../posts/post.entity';
 import { PermissionName } from '../roles/permission-names';
 import { Role } from '../roles/role.entity';
 import { User } from '../users/user.entity';
 
-type Action = 'create' | 'read' | 'update' | 'delete' | 'publish';
+type Action = 'create' | 'read' | 'update' | 'delete' | 'publish' | 'like';
 type Subjects = InferSubjects<
-  | typeof Category
-  | typeof Comment
-  | typeof Like
-  | typeof Post
-  | typeof Role
-  | typeof User
+  typeof Category | typeof Comment | typeof Post | typeof Role | typeof User
 >;
 
 export type AppAbility = MongoAbility<[Action, Subjects]>;
@@ -43,14 +37,14 @@ const PERMISSION_RULES: Record<
   'posts.delete.all': (can) => can('delete', Post),
   'posts.delete.own': (can, user) => can('delete', Post, { authorId: user.id }),
   'posts.publish': (can) => can('publish', Post),
+  'posts.like': (can) => can('like', Post),
   'comments.create': (can) => can('create', Comment),
   'comments.update.own': (can, user) =>
     can('update', Comment, { authorId: user.id }),
   'comments.delete.all': (can) => can('delete', Comment),
   'comments.delete.own': (can, user) =>
     can('delete', Comment, { authorId: user.id }),
-  'likes.create': (can) => can('create', Like),
-  'likes.delete': (can) => can('delete', Like),
+  'comments.like': (can) => can('like', Comment),
   'users.read': (can) => can('read', User),
   'users.manage': (can) => {
     can('update', User);

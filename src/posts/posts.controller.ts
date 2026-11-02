@@ -19,7 +19,6 @@ import { Public } from '../auth/decorators/public.decorator';
 import { CaslAbilityFactory } from '../casl/casl-ability.factory';
 import { CheckPolicies } from '../casl/check-policies.decorator';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { Like } from '../likes/like.entity';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { PostAccess } from './post-access.guard';
@@ -80,7 +79,7 @@ export class PostsController {
   }
 
   @Put(':id/like')
-  @CheckPolicies((ability) => ability.can('create', Like))
+  @CheckPolicies((ability) => ability.can('like', PostEntity))
   @HttpCode(HttpStatus.NO_CONTENT)
   like(
     @Param('id', ParseUUIDPipe) id: string,
@@ -90,7 +89,7 @@ export class PostsController {
   }
 
   @Delete(':id/like')
-  @CheckPolicies((ability) => ability.can('delete', Like))
+  @CheckPolicies((ability) => ability.can('like', PostEntity))
   @HttpCode(HttpStatus.NO_CONTENT)
   unlike(
     @Param('id', ParseUUIDPipe) id: string,

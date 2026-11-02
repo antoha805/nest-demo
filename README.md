@@ -140,11 +140,13 @@ npm run make-admin -- alice@example.com
 
 In production, use `docker compose -f docker-compose.prod.yml --env-file prod.env exec api npm run make-admin:prod -- alice@example.com`.
 
-`npm run permissions:sync` stores the permissions from the code and three roles in the database. It runs after migrations on every `docker compose up` and deploy, and is safe to re-run. `admin` always gets every permission and cannot be changed or deleted. `editor` and `member` start with the permissions in `src/roles/permission-names.ts`, and are only created if missing, so edits made through the API are kept but a deleted `editor` role comes back. `member` cannot be renamed or deleted, as registration assigns it.
+`npm run permissions:sync` makes the database match the permissions in the code, as the API can only assign them, not create them. It runs after migrations on every `docker compose up` and deploy, and is safe to re-run. `admin` always gets every permission and cannot be changed or deleted. `editor` and `member` are created with the permissions in `src/roles/permission-names.ts` if they are missing, so a deleted `editor` role comes back. After that they only get permissions that are new, so edits made through the API are kept. `member` cannot be renamed or deleted, as registration assigns it.
 
 Every route requires a token unless marked `@Public()`. Permissions are checked with [CASL](https://casl.js.org): `src/casl/casl-ability.factory.ts` turns each permission a user holds into rules. To protect a route, add `@CheckPolicies((ability) => ability.can('create', Post))`, which responds with `403 Forbidden` if the check fails. Rules that depend on the record, like `posts.update.own`, need a guard that loads it, as `@PostAccess('update')` does in `src/posts/post-access.guard.ts`.
 
-To add a permission, add it to `src/roles/permission-names.ts` and its rules to `PERMISSION_RULES` in the ability factory, which fails to compile until you do. The next sync inserts it and grants it to `admin`. Removing a name from that file does not delete the permission from the database, so write a migration for that.
+To add a permission, add it to `src/roles/permission-names.ts` and its rules to `PERMISSION_RULES` in the ability factory, which fails to compile until you do. The next sync inserts it and grants it to `admin` and to the roles that have it in their defaults.
+
+Removing a name from that file makes the next sync delete the permission and all its grants, including those on custom roles and users, and deploying an older version does the same. Renaming counts as removing one and adding another, so custom roles and users lose it. To keep their grants, rename the permission in a migration, which runs before the sync.
 
 ## Endpoints
 
@@ -163,14 +165,14 @@ To add a permission, add it to `src/roles/permission-names.ts` and its rules to 
 | GET    | `/api/posts/:id`              | Public                                         | Get a post                      |
 | PATCH  | `/api/posts/:id`              | `posts.update.all` or `posts.update.own`       | Update a post                   |
 | DELETE | `/api/posts/:id`              | `posts.delete.all` or `posts.delete.own`       | Delete a post                   |
-| PUT    | `/api/posts/:id/like`         | `likes.create`                                 | Like a post                     |
-| DELETE | `/api/posts/:id/like`         | `likes.delete`                                 | Remove your like from a post    |
+| PUT    | `/api/posts/:id/like`         | `posts.like`                                   | Like a post                     |
+| DELETE | `/api/posts/:id/like`         | `posts.like`                                   | Remove your like from a post    |
 | POST   | `/api/posts/:postId/comments` | `comments.create`                              | Comment on a post               |
 | GET    | `/api/posts/:postId/comments` | Public                                         | List a post's comments          |
 | PATCH  | `/api/comments/:id`           | `comments.update.own`                          | Update your comment             |
 | DELETE | `/api/comments/:id`           | `comments.delete.all` or `comments.delete.own` | Delete a comment                |
-| PUT    | `/api/comments/:id/like`      | `likes.create`                                 | Like a comment                  |
-| DELETE | `/api/comments/:id/like`      | `likes.delete`                                 | Remove your like from a comment |
+| PUT    | `/api/comments/:id/like`      | `comments.like`                                | Like a comment                  |
+| DELETE | `/api/comments/:id/like`      | `comments.like`                                | Remove your like from a comment |
 | GET    | `/api/users`                  | `users.read`                                   | List users                      |
 | GET    | `/api/users/:id`              | `users.read`                                   | Get a user                      |
 | PUT    | `/api/users/:id/roles`        | `users.manage`                                 | Replace a user's roles          |
@@ -217,7 +219,9 @@ To get the next page, send `nextCursor` as `after`. It is `null` on the last pag
 
 ## Seeding
 
-`npm run seed` adds sample categories and posts. It can be run repeatedly: existing categories are updated, existing posts are left unchanged, and nothing is deleted.
+`npm run seed` adds sample categories, posts, comments and likes. It can be run repeatedly: existing categories are updated, everything else that exists is left unchanged, and nothing is deleted.
+
+The comments and likes come from three users, such as `seed-ana@example.com`, with random passwords that are not kept, so nobody can log in as them. Register your own user to see `myLikeAt` and `myLastCommentAt` change.
 
 ## Tests
 

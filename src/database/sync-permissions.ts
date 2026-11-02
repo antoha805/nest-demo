@@ -1,4 +1,4 @@
-import { EntityManager } from 'typeorm';
+import { EntityManager, In, Not } from 'typeorm';
 import { Permission } from '../roles/permission.entity';
 import {
   ADMIN_ROLE,
@@ -8,9 +8,12 @@ import {
 import { Role } from '../roles/role.entity';
 import dataSource from './data-source';
 
-// Safe to re-run. Never deletes: removing a permission takes access away from
-// users, so that stays a deliberate migration.
+// Safe to re-run. The code owns the permissions, as the API can only assign them.
 export async function syncPermissions(manager: EntityManager): Promise<void> {
+  await manager.delete(Permission, { name: Not(In(PERMISSION_NAMES)) });
+  const existing = await manager.find(Permission);
+  const existingNames = new Set(existing.map((p) => p.name));
+
   await manager
     .createQueryBuilder()
     .insert()
@@ -27,13 +30,20 @@ export async function syncPermissions(manager: EntityManager): Promise<void> {
   });
 
   for (const [name, defaults] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
-    if (!(await manager.existsBy(Role, { name }))) {
-      const names: string[] = defaults;
-      await manager.save(Role, {
-        name,
-        permissions: permissions.filter((p) => names.includes(p.name)),
-      });
-    }
+    const names: string[] = defaults;
+    const role = await manager.findOne(Role, {
+      where: { name },
+      relations: { permissions: true },
+    });
+    // An existing role only gets new permissions, so edits made through the API
+    // are kept: a default that was removed from it stays removed.
+    const granted = permissions.filter(
+      (p) => names.includes(p.name) && (!role || !existingNames.has(p.name)),
+    );
+    await manager.save(Role, {
+      ...(role ?? { name }),
+      permissions: [...(role?.permissions ?? []), ...granted],
+    });
   }
 }
 

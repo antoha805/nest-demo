@@ -6,6 +6,7 @@ import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 import { AppModule } from './../src/app.module';
 import { AuthService } from './../src/auth/auth.service';
+import { syncPermissions } from './../src/database/sync-permissions';
 import { Category } from './../src/categories/category.entity';
 import { Comment } from './../src/comments/comment.entity';
 import { CursorPaginated } from './../src/common/cursor-paginated';
@@ -17,6 +18,7 @@ import {
   PERMISSION_NAMES,
   PERMISSIONS,
 } from './../src/roles/permission-names';
+import { Permission } from './../src/roles/permission.entity';
 import { Role } from './../src/roles/role.entity';
 import { User } from './../src/users/user.entity';
 
@@ -242,11 +244,11 @@ describe('API (e2e)', () => {
         permissions: [
           PERMISSIONS.COMMENTS_CREATE,
           PERMISSIONS.COMMENTS_DELETE_OWN,
+          PERMISSIONS.COMMENTS_LIKE,
           PERMISSIONS.COMMENTS_UPDATE_OWN,
-          PERMISSIONS.LIKES_CREATE,
-          PERMISSIONS.LIKES_DELETE,
           PERMISSIONS.POSTS_CREATE,
           PERMISSIONS.POSTS_DELETE_OWN,
+          PERMISSIONS.POSTS_LIKE,
           PERMISSIONS.POSTS_UPDATE_OWN,
         ],
       });
@@ -661,6 +663,38 @@ describe('API (e2e)', () => {
           .expect(403);
       });
 
+      it('controls liking posts and comments separately', async () => {
+        const { token } = await register();
+        const { id } = await currentUser(token);
+        const post = await createPost(adminToken, true);
+        const comment = await createComment(adminToken, post.id);
+        const postUrl = `/api/posts/${post.id}/like`;
+        const commentUrl = `/api/comments/${comment.id}/like`;
+        await http()
+          .put(`/api/users/${id}/roles`)
+          .send({ roles: [] })
+          .expect(200);
+        await http()
+          .put(`/api/users/${id}/permissions`)
+          .send({ permissions: [PERMISSIONS.POSTS_LIKE] })
+          .expect(200);
+
+        await withToken(token).put(postUrl).expect(204);
+        await withToken(token).delete(postUrl).expect(204);
+        await withToken(token).put(commentUrl).expect(403);
+        await withToken(token).delete(commentUrl).expect(403);
+
+        await http()
+          .put(`/api/users/${id}/permissions`)
+          .send({ permissions: [PERMISSIONS.COMMENTS_LIKE] })
+          .expect(200);
+
+        await withToken(token).put(postUrl).expect(403);
+        await withToken(token).delete(postUrl).expect(403);
+        await withToken(token).put(commentUrl).expect(204);
+        await withToken(token).delete(commentUrl).expect(204);
+      });
+
       it('counts one like per user on posts and comments', async () => {
         const { token } = await register();
         const { token: otherToken } = await register();
@@ -1004,6 +1038,89 @@ describe('API (e2e)', () => {
         expect((listed.body as CursorPaginated<Comment>).data).toMatchObject([
           { id: comment.id, authorId: null },
         ]);
+      });
+    });
+
+    describe('permission sync', () => {
+      const sync = () => app.get(DataSource).transaction(syncPermissions);
+      const roleNamed = async (name: string) => {
+        const roles = await http().get('/api/roles').expect(200);
+        return (roles.body as Role[]).find((r) => r.name === name) as Role;
+      };
+      const permissionsOf = async (name: string) =>
+        (await roleNamed(name)).permissions.map((p) => p.name);
+
+      it('deletes permissions that are no longer in the code', async () => {
+        const manager = app.get(DataSource).manager;
+        const stale = await manager.save(Permission, {
+          name: 'old.permission',
+        });
+        const member = await roleNamed('member');
+        await manager
+          .createQueryBuilder()
+          .relation(Role, 'permissions')
+          .of(member.id)
+          .add(stale.id);
+
+        await sync();
+
+        await expect(
+          manager.existsBy(Permission, { name: 'old.permission' }),
+        ).resolves.toBe(false);
+        expect(await permissionsOf('member')).not.toContain('old.permission');
+      });
+
+      it('grants new permissions to the roles that default to them', async () => {
+        const manager = app.get(DataSource).manager;
+        await manager.delete(Permission, { name: PERMISSIONS.COMMENTS_LIKE });
+        await manager.delete(Permission, { name: PERMISSIONS.POSTS_PUBLISH });
+
+        await sync();
+
+        expect(await permissionsOf('member')).toContain(
+          PERMISSIONS.COMMENTS_LIKE,
+        );
+        expect(await permissionsOf('member')).not.toContain(
+          PERMISSIONS.POSTS_PUBLISH,
+        );
+        expect(await permissionsOf('editor')).toEqual(
+          expect.arrayContaining([
+            PERMISSIONS.COMMENTS_LIKE,
+            PERMISSIONS.POSTS_PUBLISH,
+          ]),
+        );
+        expect(await permissionsOf(ADMIN_ROLE)).toEqual(
+          expect.arrayContaining([
+            PERMISSIONS.COMMENTS_LIKE,
+            PERMISSIONS.POSTS_PUBLISH,
+          ]),
+        );
+      });
+
+      it('keeps edits to existing roles', async () => {
+        const member = await roleNamed('member');
+        const original = member.permissions.map((p) => p.name);
+
+        await http()
+          .patch(`/api/roles/${member.id}`)
+          .send({
+            permissions: [
+              ...original.filter((name) => name !== PERMISSIONS.POSTS_LIKE),
+              PERMISSIONS.USERS_READ,
+            ],
+          })
+          .expect(200);
+
+        await sync();
+
+        const synced = await permissionsOf('member');
+        expect(synced).not.toContain(PERMISSIONS.POSTS_LIKE);
+        expect(synced).toContain(PERMISSIONS.USERS_READ);
+
+        await http()
+          .patch(`/api/roles/${member.id}`)
+          .send({ permissions: original })
+          .expect(200);
       });
     });
 

@@ -1,16 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-const NEW_PERMISSIONS = [
-  'comments.create',
-  'comments.update.own',
-  'comments.delete.all',
-  'comments.delete.own',
-  'likes.create',
-  'likes.delete',
-]
-  .map((name) => `('${name}')`)
-  .join(', ');
-
 export class AddCommentsAndLikes1793648839376 implements MigrationInterface {
   name = 'AddCommentsAndLikes1793648839376';
 
@@ -48,21 +37,9 @@ export class AddCommentsAndLikes1793648839376 implements MigrationInterface {
     await queryRunner.query(
       `CREATE TRIGGER "comments_delete_likes" AFTER DELETE ON "comments" FOR EACH ROW EXECUTE FUNCTION "delete_likes"('comment')`,
     );
-
-    // The sync only gives roles their defaults when creating them, so existing
-    // ones are granted the new permissions here.
-    await queryRunner.query(
-      `INSERT INTO "permissions" ("name") VALUES ${NEW_PERMISSIONS} ON CONFLICT ("name") DO NOTHING`,
-    );
-    await queryRunner.query(
-      `INSERT INTO "role_permissions" ("roleId", "permissionId") SELECT r."id", p."id" FROM "roles" r JOIN "permissions" p ON p."name" IN ('comments.create', 'comments.update.own', 'likes.create', 'likes.delete') OR (r."name" = 'member' AND p."name" = 'comments.delete.own') OR (r."name" = 'editor' AND p."name" = 'comments.delete.all') WHERE r."name" IN ('member', 'editor') ON CONFLICT DO NOTHING`,
-    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DELETE FROM "permissions" WHERE "name" IN (VALUES ${NEW_PERMISSIONS})`,
-    );
     await queryRunner.query(
       `DROP TRIGGER "comments_delete_likes" ON "comments"`,
     );

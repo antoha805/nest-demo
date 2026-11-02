@@ -73,6 +73,13 @@ describe('CaslAbilityFactory', () => {
     expect(ability.can('delete', commentBy(null))).toBe(true);
   });
 
+  it('keeps liking posts and comments separate', () => {
+    const ability = abilityFor(PERMISSIONS.POSTS_LIKE);
+
+    expect(ability.can('like', Post)).toBe(true);
+    expect(ability.can('like', Comment)).toBe(false);
+  });
+
   it('ignores names missing from the code', () => {
     expect(abilityFor('posts.update').can('update', Post)).toBe(false);
   });
