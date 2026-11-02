@@ -6,15 +6,21 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindManyOptions, FindOptionsWhere, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/authenticated-user';
-import { CaslAbilityFactory } from '../casl/casl-ability.factory';
 import { CategoriesService } from '../categories/categories.service';
+import { Comment } from '../comments/comment.entity';
+import { CommentsService } from '../comments/comments.service';
+import { CursorPaginated } from '../common/cursor-paginated';
+import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { paginate, Paginated } from '../common/paginated';
 import { LikeableType } from '../likes/like.entity';
 import { LikesService } from '../likes/likes.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
+import { PostVisibilityService } from './post-visibility.service';
 import { Post } from './post.entity';
+
+export type PostWithComments = Post & { comments: CursorPaginated<Comment> };
 
 @Injectable()
 export class PostsService {
@@ -22,8 +28,9 @@ export class PostsService {
     @InjectRepository(Post)
     private readonly postsRepository: Repository<Post>,
     private readonly categoriesService: CategoriesService,
-    private readonly caslAbilityFactory: CaslAbilityFactory,
+    private readonly postVisibilityService: PostVisibilityService,
     private readonly likesService: LikesService,
+    private readonly commentsService: CommentsService,
   ) {}
 
   async create(dto: CreatePostDto, authorId: string): Promise<Post> {
@@ -41,7 +48,7 @@ export class PostsService {
     return paginate(
       this.queryForUser(
         {
-          where: this.visibleWhere(user),
+          where: this.postVisibilityService.visibleWhere(user),
           // The id keeps pages stable when posts share a timestamp.
           order: { createdAt: 'DESC', id: 'DESC' },
         },
@@ -51,18 +58,22 @@ export class PostsService {
     );
   }
 
-  findVisibleForUser(id: string, user?: AuthenticatedUser): Promise<Post> {
-    return this.findOneForUser(
-      this.visibleWhere(user).map((where) => ({ ...where, id })),
+  async findVisibleWithComments(
+    id: string,
+    user?: AuthenticatedUser,
+  ): Promise<PostWithComments> {
+    const post = await this.findOneForUser(
+      this.postVisibilityService
+        .visibleWhere(user)
+        .map((where) => ({ ...where, id })),
       user?.id,
     );
-  }
-
-  findVisible(id: string, user?: AuthenticatedUser): Promise<Post> {
-    return this.postsRepository.findOneOrFail({
-      where: this.visibleWhere(user).map((where) => ({ ...where, id })),
-      relations: { category: true },
-    });
+    const comments = await this.commentsService.findPageForPost(
+      id,
+      new CursorPaginationQueryDto(),
+      user?.id,
+    );
+    return { ...post, comments };
   }
 
   findOne(id: string): Promise<Post> {
@@ -107,12 +118,12 @@ export class PostsService {
   }
 
   async like(id: string, user: AuthenticatedUser): Promise<void> {
-    await this.findVisible(id, user);
+    await this.postVisibilityService.findVisible(id, user);
     await this.likesService.like(LikeableType.POST, id, user.id);
   }
 
   async unlike(id: string, user: AuthenticatedUser): Promise<void> {
-    await this.findVisible(id, user);
+    await this.postVisibilityService.findVisible(id, user);
     await this.likesService.unlike(LikeableType.POST, id, user.id);
   }
 
@@ -133,16 +144,6 @@ export class PostsService {
     userId?: string,
   ): Promise<Post> {
     return this.queryForUser({ where }, userId).getOneOrFail();
-  }
-
-  private visibleWhere(user?: AuthenticatedUser): FindOptionsWhere<Post>[] {
-    if (!user) {
-      return [{ published: true }];
-    }
-    // Publishers have to see drafts in order to review them.
-    return this.caslAbilityFactory.createForUser(user).can('publish', Post)
-      ? [{}]
-      : [{ published: true }, { authorId: user.id }];
   }
 
   private async assertCategoryExists(categoryId: string): Promise<void> {

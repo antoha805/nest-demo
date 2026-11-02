@@ -197,13 +197,23 @@ Liking and unliking are idempotent and respond with `204 No Content`. Posts and 
 
 ## Pagination
 
-`GET /api/posts` and `GET /api/posts/:postId/comments` accept `page` (default `1`) and `limit` (default `20`, at most `100`), and respond with:
+`GET /api/posts` accepts `page` (default `1`) and `limit` (default `20`, at most `100`), and lists posts newest first:
 
 ```json
 { "data": [], "total": 42, "page": 1, "limit": 20, "totalPages": 3 }
 ```
 
-Posts are listed newest first and comments oldest first. A page past the end has an empty `data`.
+A page past the end has an empty `data`.
+
+`GET /api/posts/:postId/comments` uses cursors instead, as comments are added and deleted while people read them. It accepts `after` and `limit` (default `20`, at most `100`), and lists comments oldest first:
+
+```json
+{ "data": [], "limit": 20, "nextCursor": "019a…" }
+```
+
+To get the next page, send `nextCursor` as `after`. It is `null` on the last page. The total is the post's `commentsCount`.
+
+`GET /api/posts/:id` also returns the first page of comments in the same format under `comments`. The other post routes do not.
 
 ## Seeding
 

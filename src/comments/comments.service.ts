@@ -2,11 +2,11 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindManyOptions, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/authenticated-user';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { paginate, Paginated } from '../common/paginated';
+import { cursorPaginate, CursorPaginated } from '../common/cursor-paginated';
+import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
 import { LikeableType } from '../likes/like.entity';
 import { LikesService } from '../likes/likes.service';
-import { PostsService } from '../posts/posts.service';
+import { PostVisibilityService } from '../posts/post-visibility.service';
 import { Comment } from './comment.entity';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
@@ -16,7 +16,7 @@ export class CommentsService {
   constructor(
     @InjectRepository(Comment)
     private readonly commentsRepository: Repository<Comment>,
-    private readonly postsService: PostsService,
+    private readonly postVisibilityService: PostVisibilityService,
     private readonly likesService: LikesService,
   ) {}
 
@@ -25,7 +25,7 @@ export class CommentsService {
     dto: CreateCommentDto,
     user: AuthenticatedUser,
   ): Promise<Comment> {
-    await this.postsService.findVisible(postId, user);
+    await this.postVisibilityService.findVisible(postId, user);
     const { id } = await this.commentsRepository.save(
       this.commentsRepository.create({ ...dto, postId, authorId: user.id }),
     );
@@ -34,19 +34,21 @@ export class CommentsService {
 
   async findAllForPost(
     postId: string,
-    query: PaginationQueryDto,
+    query: CursorPaginationQueryDto,
     user?: AuthenticatedUser,
-  ): Promise<Paginated<Comment>> {
-    await this.postsService.findVisible(postId, user);
-    return paginate(
-      this.queryForUser(
-        {
-          where: { postId },
-          // The id keeps pages stable when comments share a timestamp.
-          order: { createdAt: 'ASC', id: 'ASC' },
-        },
-        user?.id,
-      ),
+  ): Promise<CursorPaginated<Comment>> {
+    await this.postVisibilityService.findVisible(postId, user);
+    return this.findPageForPost(postId, query, user?.id);
+  }
+
+  // The caller has to check that the user can read the post.
+  findPageForPost(
+    postId: string,
+    query: CursorPaginationQueryDto,
+    userId?: string,
+  ): Promise<CursorPaginated<Comment>> {
+    return cursorPaginate(
+      this.queryForUser({ where: { postId } }, userId),
       query,
     );
   }
@@ -54,7 +56,7 @@ export class CommentsService {
   // A comment is only as visible as its post, so drafts do not leak through it.
   async findVisible(id: string, user: AuthenticatedUser): Promise<Comment> {
     const comment = await this.findOne(id);
-    await this.postsService.findVisible(comment.postId, user);
+    await this.postVisibilityService.findVisible(comment.postId, user);
     return comment;
   }
 

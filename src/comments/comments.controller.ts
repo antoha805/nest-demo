@@ -16,7 +16,7 @@ import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { CheckPolicies } from '../casl/check-policies.decorator';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
 import { Like } from '../likes/like.entity';
 import { CommentAccess } from './comment-access.guard';
 import { Comment } from './comment.entity';
@@ -42,7 +42,7 @@ export class CommentsController {
   @Get('posts/:postId/comments')
   findAllForPost(
     @Param('postId', ParseUUIDPipe) postId: string,
-    @Query() query: PaginationQueryDto,
+    @Query() query: CursorPaginationQueryDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
     return this.commentsService.findAllForPost(postId, query, user);

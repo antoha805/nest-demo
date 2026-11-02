@@ -8,6 +8,7 @@ import { AppModule } from './../src/app.module';
 import { AuthService } from './../src/auth/auth.service';
 import { Category } from './../src/categories/category.entity';
 import { Comment } from './../src/comments/comment.entity';
+import { CursorPaginated } from './../src/common/cursor-paginated';
 import { Paginated } from './../src/common/paginated';
 import { Like } from './../src/likes/like.entity';
 import { Post } from './../src/posts/post.entity';
@@ -608,7 +609,7 @@ describe('API (e2e)', () => {
 
         const listed = await anonymous().get(url).expect(200);
         expect(
-          (listed.body as Paginated<Comment>).data.map((c) => c.id),
+          (listed.body as CursorPaginated<Comment>).data.map((c) => c.id),
         ).toEqual([comment.id]);
 
         const commentUrl = `/api/comments/${comment.id}`;
@@ -673,7 +674,7 @@ describe('API (e2e)', () => {
         };
         const commentLikes = async () => {
           const response = await anonymous().get(commentsUrl).expect(200);
-          return (response.body as Paginated<Comment>).data[0].likesCount;
+          return (response.body as CursorPaginated<Comment>).data[0].likesCount;
         };
 
         await anonymous().put(`${postUrl}/like`).expect(401);
@@ -779,26 +780,23 @@ describe('API (e2e)', () => {
           const response = await anonymous()
             .get(url + query)
             .expect(200);
-          return response.body as Paginated<Comment>;
+          return response.body as CursorPaginated<Comment>;
         };
 
         const first = await page('?limit=2');
-        expect(first).toMatchObject({
-          total: 3,
-          page: 1,
-          limit: 2,
-          totalPages: 2,
-        });
+        expect(first.limit).toBe(2);
+        expect(first.nextCursor).toBe(ids[1]);
         expect(first.data.map((c) => c.id)).toEqual(ids.slice(0, 2));
 
-        const second = await page('?limit=2&page=2');
-        expect(second.page).toBe(2);
+        // Deleting a comment that was already read must not skip the next one.
+        await http().delete(`/api/comments/${ids[0]}`).expect(204);
+
+        const second = await page(`?limit=2&after=${first.nextCursor}`);
+        expect(second.nextCursor).toBeNull();
         expect(second.data.map((c) => c.id)).toEqual(ids.slice(2));
 
-        const beyond = await page('?limit=2&page=3');
-        expect(beyond).toMatchObject({ data: [], total: 3 });
-
-        await expect(page('')).resolves.toMatchObject({ page: 1, limit: 20 });
+        const beyond = await page(`?after=${ids[2]}`);
+        expect(beyond).toEqual({ data: [], limit: 20, nextCursor: null });
 
         const posts = await anonymous().get('/api/posts?limit=1').expect(200);
         const { data, limit, total } = posts.body as Paginated<Post>;
@@ -807,18 +805,74 @@ describe('API (e2e)', () => {
         expect(total).toBeGreaterThan(1);
         expect(data[0].category).toBeDefined();
 
-        for (const query of [
-          'limit=0',
-          'limit=101',
-          'limit=x',
-          'page=0',
-          'page=1.5',
-          'page=1e300',
-          'unknown=1',
-        ]) {
+        for (const query of ['limit=0', 'limit=101', 'limit=x', 'unknown=1']) {
           await anonymous().get(`/api/posts?${query}`).expect(400);
           await anonymous().get(`${url}?${query}`).expect(400);
         }
+        for (const query of ['page=0', 'page=1.5', 'page=1e300']) {
+          await anonymous().get(`/api/posts?${query}`).expect(400);
+        }
+        await anonymous().get(`${url}?page=1`).expect(400);
+        await anonymous().get(`${url}?after=not-a-uuid`).expect(400);
+      });
+
+      it('includes the first page of comments in a single post', async () => {
+        const { token } = await register();
+        const { token: otherToken } = await register();
+        const post = await createPost(adminToken, true);
+        const url = `/api/posts/${post.id}`;
+        const ids: string[] = [];
+        for (let i = 0; i < 21; i++) {
+          ids.push((await createComment(token, post.id)).id);
+        }
+        await withToken(token).put(`/api/comments/${ids[0]}/like`).expect(204);
+
+        const fetched = await withToken(token).get(url).expect(200);
+        const { comments, commentsCount } = fetched.body as Post & {
+          comments: CursorPaginated<Comment>;
+        };
+        expect(commentsCount).toBe(21);
+        expect(comments.limit).toBe(20);
+        expect(comments.nextCursor).toBe(ids[19]);
+        expect(comments.data.map((c) => c.id)).toEqual(ids.slice(0, 20));
+        expect(comments.data[0]).toMatchObject({ likesCount: 1 });
+        expect(comments.data[0].myLikeAt).not.toBeNull();
+        expect(comments.data[1].myLikeAt).toBeNull();
+
+        const next = await anonymous()
+          .get(`${url}/comments?after=${comments.nextCursor}`)
+          .expect(200);
+        expect(next.body).toMatchObject({
+          data: [{ id: ids[20], myLikeAt: null }],
+          nextCursor: null,
+        });
+
+        const asAnonymous = await anonymous().get(url).expect(200);
+        const anonymousComments = (
+          asAnonymous.body as { comments: CursorPaginated<Comment> }
+        ).comments;
+        expect(anonymousComments.data[0].myLikeAt).toBeNull();
+
+        const list = await anonymous().get('/api/posts?limit=1').expect(200);
+        expect((list.body as Paginated<Post>).data[0]).not.toHaveProperty(
+          'comments',
+        );
+        const edited = await http()
+          .patch(url)
+          .send({ title: 'Edited' })
+          .expect(200);
+        expect(edited.body).not.toHaveProperty('comments');
+
+        const draft = await createPost(token);
+        await createComment(token, draft.id);
+        await withToken(otherToken).get(`/api/posts/${draft.id}`).expect(404);
+        const ownDraft = await withToken(token)
+          .get(`/api/posts/${draft.id}`)
+          .expect(200);
+        expect(
+          (ownDraft.body as { comments: CursorPaginated<Comment> }).comments
+            .data,
+        ).toHaveLength(1);
       });
 
       it('tells each user when they liked something', async () => {
@@ -844,7 +898,7 @@ describe('API (e2e)', () => {
           return {
             post: (single.body as Post).myLikeAt,
             listedPost: listed?.myLikeAt,
-            listedComment: (comments.body as Paginated<Comment>).data[0]
+            listedComment: (comments.body as CursorPaginated<Comment>).data[0]
               .myLikeAt,
           };
         };
@@ -947,7 +1001,7 @@ describe('API (e2e)', () => {
         const listed = await anonymous()
           .get(`/api/posts/${post.id}/comments`)
           .expect(200);
-        expect((listed.body as Paginated<Comment>).data).toMatchObject([
+        expect((listed.body as CursorPaginated<Comment>).data).toMatchObject([
           { id: comment.id, authorId: null },
         ]);
       });

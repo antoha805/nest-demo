@@ -55,7 +55,7 @@ export class PostsController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
-    return this.postsService.findVisibleForUser(id, user);
+    return this.postsService.findVisibleWithComments(id, user);
   }
 
   @Patch(':id')

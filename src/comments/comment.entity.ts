@@ -13,6 +13,8 @@ import { Post } from '../posts/post.entity';
 import { User } from '../users/user.entity';
 
 @Entity('comments')
+// Serves the cursor pagination of a post's comments.
+@Index(['postId', 'id'])
 export class Comment {
   @PrimaryColumn({ type: 'uuid', default: () => 'uuidv7()' })
   id: string;
@@ -20,7 +22,6 @@ export class Comment {
   @Column({ type: 'text' })
   content: string;
 
-  @Index()
   @Column({ type: 'uuid' })
   postId: string;
 
