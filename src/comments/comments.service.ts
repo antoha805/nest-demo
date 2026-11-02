@@ -5,7 +5,7 @@ import { AuthenticatedUser } from '../auth/authenticated-user';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { paginate, Paginated } from '../common/paginated';
 import { LikeableType } from '../likes/like.entity';
-import { joinMyLike, setLikedByMeAt } from '../likes/liked-by-me';
+import { selectLikedByMeAt } from '../likes/liked-by-me';
 import { LikesService } from '../likes/likes.service';
 import { PostsService } from '../posts/posts.service';
 import { Comment } from './comment.entity';
@@ -39,7 +39,7 @@ export class CommentsService {
     user?: AuthenticatedUser,
   ): Promise<Paginated<Comment>> {
     await this.postsService.findVisible(postId, user);
-    const page = await paginate(
+    return paginate(
       this.queryForUser(
         {
           where: { postId },
@@ -50,8 +50,6 @@ export class CommentsService {
       ),
       query,
     );
-    setLikedByMeAt(page.data);
-    return page;
   }
 
   // A comment is only as visible as its post, so drafts do not leak through it.
@@ -92,21 +90,16 @@ export class CommentsService {
   }
 
   private queryForUser(options: FindManyOptions<Comment>, userId?: string) {
-    return joinMyLike(
+    return selectLikedByMeAt(
       this.commentsRepository
         .createQueryBuilder('comment')
         .setFindOptions(options),
-      LikeableType.COMMENT,
       userId,
     );
   }
 
-  private async findOneForUser(id: string, userId: string): Promise<Comment> {
-    const comment = await this.queryForUser(
-      { where: { id } },
-      userId,
-    ).getOneOrFail();
-    return setLikedByMeAt([comment])[0];
+  private findOneForUser(id: string, userId: string): Promise<Comment> {
+    return this.queryForUser({ where: { id } }, userId).getOneOrFail();
   }
 
   private findOne(id: string): Promise<Comment> {

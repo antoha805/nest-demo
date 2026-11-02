@@ -11,7 +11,7 @@ import { CategoriesService } from '../categories/categories.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { paginate, Paginated } from '../common/paginated';
 import { LikeableType } from '../likes/like.entity';
-import { joinMyLike, setLikedByMeAt } from '../likes/liked-by-me';
+import { selectLikedByMeAt } from '../likes/liked-by-me';
 import { LikesService } from '../likes/likes.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
@@ -35,11 +35,11 @@ export class PostsService {
     return this.findOneForUser({ id }, authorId);
   }
 
-  async findAll(
+  findAll(
     query: PaginationQueryDto,
     user?: AuthenticatedUser,
   ): Promise<Paginated<Post>> {
-    const page = await paginate(
+    return paginate(
       this.queryForUser(
         {
           where: this.visibleWhere(user),
@@ -50,8 +50,6 @@ export class PostsService {
       ),
       query,
     );
-    setLikedByMeAt(page.data);
-    return page;
   }
 
   findVisibleForUser(id: string, user?: AuthenticatedUser): Promise<Post> {
@@ -120,21 +118,19 @@ export class PostsService {
   }
 
   private queryForUser(options: FindManyOptions<Post>, userId?: string) {
-    return joinMyLike(
+    return selectLikedByMeAt(
       this.postsRepository
         .createQueryBuilder('post')
         .setFindOptions({ ...options, relations: { category: true } }),
-      LikeableType.POST,
       userId,
     );
   }
 
-  private async findOneForUser(
+  private findOneForUser(
     where: FindOptionsWhere<Post> | FindOptionsWhere<Post>[],
     userId?: string,
   ): Promise<Post> {
-    const post = await this.queryForUser({ where }, userId).getOneOrFail();
-    return setLikedByMeAt([post])[0];
+    return this.queryForUser({ where }, userId).getOneOrFail();
   }
 
   private visibleWhere(user?: AuthenticatedUser): FindOptionsWhere<Post>[] {

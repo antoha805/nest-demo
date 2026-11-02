@@ -50,7 +50,13 @@ export class Post {
   })
   likesCount: number;
 
-  // Not a column: set by setLikedByMeAt for the user making the request.
+  // Only loaded by queries that go through selectLikedByMeAt.
+  @VirtualColumn({
+    type: 'timestamptz',
+    select: false,
+    query: (alias) =>
+      `SELECT "likes"."createdAt" FROM "likes" WHERE "likes"."likeableType" = 'post' AND "likes"."likeableId" = ${alias}."id" AND "likes"."userId" = :likedByUserId`,
+  })
   likedByMeAt: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
