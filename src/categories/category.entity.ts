@@ -5,6 +5,7 @@ import {
   OneToMany,
   PrimaryColumn,
   UpdateDateColumn,
+  VirtualColumn,
 } from 'typeorm';
 import { Post } from '../posts/post.entity';
 
@@ -21,6 +22,16 @@ export class Category {
 
   @OneToMany(() => Post, (post) => post.category)
   posts: Post[];
+
+  // Published only, as categories are public and drafts must stay hidden.
+  // Only loaded by CategoriesService.query, so posts do not count it per row.
+  @VirtualColumn({
+    type: 'int',
+    select: false,
+    query: (alias) =>
+      `SELECT COUNT(*)::int FROM "posts" WHERE "posts"."categoryId" = ${alias}."id" AND "posts"."published"`,
+  })
+  postsCount: number;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

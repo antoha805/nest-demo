@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryColumn,
@@ -25,6 +26,7 @@ export class Post {
   @Column({ type: 'boolean', default: false })
   published: boolean;
 
+  @Index()
   @Column({ type: 'uuid' })
   categoryId: string;
 

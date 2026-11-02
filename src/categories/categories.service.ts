@@ -12,18 +12,21 @@ export class CategoriesService {
     private readonly categoriesRepository: Repository<Category>,
   ) {}
 
-  create(dto: CreateCategoryDto): Promise<Category> {
-    return this.categoriesRepository.save(
+  async create(dto: CreateCategoryDto): Promise<Category> {
+    const { id } = await this.categoriesRepository.save(
       this.categoriesRepository.create(dto),
     );
+    return this.findOne(id);
   }
 
   findAll(): Promise<Category[]> {
-    return this.categoriesRepository.find({ order: { name: 'ASC' } });
+    return this.query()
+      .setFindOptions({ order: { name: 'ASC' } })
+      .getMany();
   }
 
   findOne(id: string): Promise<Category> {
-    return this.categoriesRepository.findOneByOrFail({ id });
+    return this.query().setFindOptions({ where: { id } }).getOneOrFail();
   }
 
   exists(id: string): Promise<boolean> {
@@ -42,5 +45,11 @@ export class CategoriesService {
     if (!affected) {
       throw new NotFoundException(`Category ${id} not found`);
     }
+  }
+
+  private query() {
+    return this.categoriesRepository
+      .createQueryBuilder('category')
+      .addSelect('category.postsCount');
   }
 }

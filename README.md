@@ -183,7 +183,7 @@ To add a permission, add it to `src/roles/permission-names.ts` and its rules to 
 | DELETE | `/api/roles/:id`              | `roles.manage`                                 | Delete a role                   |
 | GET    | `/api/permissions`            | `roles.read`                                   | List permissions                |
 
-A category that still has posts cannot be deleted (`409 Conflict`).
+A category that still has posts cannot be deleted (`409 Conflict`). Categories return `postsCount`, which only counts published posts, so it is the same for every user and does not reveal drafts.
 
 A post's `authorId` is set to the logged-in user when it is created and cannot be changed through the API. It is `null` for older posts and sample data, and becomes `null` if the author is deleted.
 

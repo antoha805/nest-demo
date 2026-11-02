@@ -93,7 +93,8 @@ describe('API (e2e)', () => {
   });
 
   it('supports the category CRUD lifecycle', async () => {
-    const { id, name } = await createCategory();
+    const { id, name, postsCount } = await createCategory();
+    expect(postsCount).toBe(0);
 
     await http().post('/api/categories').send({ name }).expect(409);
 
@@ -148,6 +149,43 @@ describe('API (e2e)', () => {
 
     await http().delete(`/api/categories/${first.id}`).expect(204);
     await http().delete(`/api/categories/${second.id}`).expect(204);
+  });
+
+  it('counts the published posts of a category', async () => {
+    const { id, name } = await createCategory();
+    const body = { title: 'T', content: 'C', categoryId: id };
+    const count = async () => {
+      const [single, list] = await Promise.all([
+        anonymous().get(`/api/categories/${id}`).expect(200),
+        anonymous().get('/api/categories').expect(200),
+      ]);
+      const listed = (list.body as Category[]).find((c) => c.name === name);
+      expect(listed?.postsCount).toBe((single.body as Category).postsCount);
+      return (single.body as Category).postsCount;
+    };
+
+    await expect(count()).resolves.toBe(0);
+
+    const draft = await http().post('/api/posts').send(body).expect(201);
+    const { id: postId } = draft.body as Post;
+    await expect(count()).resolves.toBe(0);
+    expect((draft.body as Post).category).not.toHaveProperty('postsCount');
+
+    await http()
+      .patch(`/api/posts/${postId}`)
+      .send({ published: true })
+      .expect(200);
+    await expect(count()).resolves.toBe(1);
+
+    const updated = await http()
+      .patch(`/api/categories/${id}`)
+      .send({ description: 'updated' })
+      .expect(200);
+    expect(updated.body).toMatchObject({ postsCount: 1 });
+
+    await http().delete(`/api/posts/${postId}`).expect(204);
+    await expect(count()).resolves.toBe(0);
+    await http().delete(`/api/categories/${id}`).expect(204);
   });
 
   it('rejects invalid input', async () => {
