@@ -791,8 +791,8 @@ describe('API (e2e)', () => {
         const postUrl = `/api/posts/${post.id}`;
         const commentUrl = `/api/comments/${comment.id}`;
 
-        expect(post.likedByMeAt).toBeNull();
-        expect(comment.likedByMeAt).toBeNull();
+        expect(post.myLikeAt).toBeNull();
+        expect(comment.myLikeAt).toBeNull();
 
         const likedAt = async (client: ReturnType<typeof anonymous>) => {
           const [single, posts, comments] = await Promise.all([
@@ -804,10 +804,10 @@ describe('API (e2e)', () => {
             ({ id }) => id === post.id,
           );
           return {
-            post: (single.body as Post).likedByMeAt,
-            listedPost: listed?.likedByMeAt,
+            post: (single.body as Post).myLikeAt,
+            listedPost: listed?.myLikeAt,
             listedComment: (comments.body as Paginated<Comment>).data[0]
-              .likedByMeAt,
+              .myLikeAt,
           };
         };
         const notLiked = { post: null, listedPost: null, listedComment: null };
@@ -834,11 +834,68 @@ describe('API (e2e)', () => {
           .patch(postUrl)
           .send({ title: 'Edited' })
           .expect(200);
-        expect(edited.body).toMatchObject({ likesCount: 1, likedByMeAt: null });
+        expect(edited.body).toMatchObject({ likesCount: 1, myLikeAt: null });
 
         await withToken(token).delete(`${postUrl}/like`).expect(204);
         await withToken(token).delete(`${commentUrl}/like`).expect(204);
         await expect(likedAt(withToken(token))).resolves.toEqual(notLiked);
+      });
+
+      it('tells each user when they last commented on a post', async () => {
+        const { token } = await register();
+        const { token: otherToken } = await register();
+        const post = await createPost(adminToken, true);
+        const url = `/api/posts/${post.id}`;
+        expect(post).toMatchObject({ commentsCount: 0, myLastCommentAt: null });
+
+        const stats = async (client: ReturnType<typeof anonymous>) => {
+          const [single, list] = await Promise.all([
+            client.get(url).expect(200),
+            client.get('/api/posts?limit=100').expect(200),
+          ]);
+          const listed = (list.body as Paginated<Post>).data.find(
+            ({ id }) => id === post.id,
+          );
+          expect(listed?.commentsCount).toBe(
+            (single.body as Post).commentsCount,
+          );
+          expect(listed?.myLastCommentAt).toBe(
+            (single.body as Post).myLastCommentAt,
+          );
+          return single.body as Post;
+        };
+
+        const first = await createComment(token, post.id);
+        const second = await createComment(token, post.id);
+        await createComment(adminToken, post.id);
+
+        const mine = await stats(withToken(token));
+        expect(mine.commentsCount).toBe(3);
+        expect(new Date(mine.myLastCommentAt as Date)).toEqual(
+          new Date(second.createdAt),
+        );
+        await expect(stats(withToken(otherToken))).resolves.toMatchObject({
+          commentsCount: 3,
+          myLastCommentAt: null,
+        });
+        await expect(stats(anonymous())).resolves.toMatchObject({
+          commentsCount: 3,
+          myLastCommentAt: null,
+        });
+
+        const edited = await http()
+          .patch(url)
+          .send({ title: 'Edited' })
+          .expect(200);
+        expect(edited.body).toMatchObject({ commentsCount: 3 });
+        expect((edited.body as Post).myLastCommentAt).not.toBeNull();
+
+        await withToken(token).delete(`/api/comments/${first.id}`).expect(204);
+        await withToken(token).delete(`/api/comments/${second.id}`).expect(204);
+        await expect(stats(withToken(token))).resolves.toMatchObject({
+          commentsCount: 1,
+          myLastCommentAt: null,
+        });
       });
 
       it('keeps comments of deleted users', async () => {

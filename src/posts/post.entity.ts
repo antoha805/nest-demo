@@ -50,14 +50,30 @@ export class Post {
   })
   likesCount: number;
 
-  // Only loaded by queries that go through selectLikedByMeAt.
+  // Only loaded by queries that go through selectMyLikeAt.
   @VirtualColumn({
     type: 'timestamptz',
     select: false,
     query: (alias) =>
-      `SELECT "likes"."createdAt" FROM "likes" WHERE "likes"."likeableType" = 'post' AND "likes"."likeableId" = ${alias}."id" AND "likes"."userId" = :likedByUserId`,
+      `SELECT "likes"."createdAt" FROM "likes" WHERE "likes"."likeableType" = 'post' AND "likes"."likeableId" = ${alias}."id" AND "likes"."userId" = :myLikeUserId`,
   })
-  likedByMeAt: Date | null;
+  myLikeAt: Date | null;
+
+  @VirtualColumn({
+    type: 'int',
+    query: (alias) =>
+      `SELECT COUNT(*)::int FROM "comments" WHERE "comments"."postId" = ${alias}."id"`,
+  })
+  commentsCount: number;
+
+  // When the user last commented. Only loaded by PostsService.queryForUser.
+  @VirtualColumn({
+    type: 'timestamptz',
+    select: false,
+    query: (alias) =>
+      `SELECT MAX("comments"."createdAt") FROM "comments" WHERE "comments"."postId" = ${alias}."id" AND "comments"."authorId" = :myLastCommentUserId`,
+  })
+  myLastCommentAt: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

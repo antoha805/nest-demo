@@ -43,14 +43,14 @@ export class Comment {
   })
   likesCount: number;
 
-  // Only loaded by queries that go through selectLikedByMeAt.
+  // Only loaded by queries that go through selectMyLikeAt.
   @VirtualColumn({
     type: 'timestamptz',
     select: false,
     query: (alias) =>
-      `SELECT "likes"."createdAt" FROM "likes" WHERE "likes"."likeableType" = 'comment' AND "likes"."likeableId" = ${alias}."id" AND "likes"."userId" = :likedByUserId`,
+      `SELECT "likes"."createdAt" FROM "likes" WHERE "likes"."likeableType" = 'comment' AND "likes"."likeableId" = ${alias}."id" AND "likes"."userId" = :myLikeUserId`,
   })
-  likedByMeAt: Date | null;
+  myLikeAt: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

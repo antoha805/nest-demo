@@ -5,8 +5,8 @@ import { AuthenticatedUser } from '../auth/authenticated-user';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { paginate, Paginated } from '../common/paginated';
 import { LikeableType } from '../likes/like.entity';
-import { selectLikedByMeAt } from '../likes/liked-by-me';
 import { LikesService } from '../likes/likes.service';
+import { selectMyLikeAt } from '../likes/select-my-like-at';
 import { PostsService } from '../posts/posts.service';
 import { Comment } from './comment.entity';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -90,7 +90,7 @@ export class CommentsService {
   }
 
   private queryForUser(options: FindManyOptions<Comment>, userId?: string) {
-    return selectLikedByMeAt(
+    return selectMyLikeAt(
       this.commentsRepository
         .createQueryBuilder('comment')
         .setFindOptions(options),
