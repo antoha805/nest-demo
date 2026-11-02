@@ -205,7 +205,7 @@ Liking and unliking are idempotent and respond with `204 No Content`. Posts and 
 
 A page past the end has an empty `data`.
 
-`GET /api/posts/:postId/comments` uses cursors instead, as comments are added and deleted while people read them. It accepts `after` and `limit` (default `20`, at most `100`), and lists comments oldest first:
+`GET /api/posts/:postId/comments` uses cursors instead, as comments are added and deleted while people read them. It accepts `after` and `limit` (default `20`, at most `100`), and lists comments newest first:
 
 ```json
 { "data": [], "limit": 20, "nextCursor": "019a…" }

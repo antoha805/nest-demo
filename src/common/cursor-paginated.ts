@@ -7,18 +7,18 @@ export interface CursorPaginated<T> {
   nextCursor: string | null;
 }
 
-// Pages by id, which is a UUID v7 and so sorts oldest first. Unlike an offset,
-// records added or deleted between requests cannot shift the next page.
+// Pages newest first by id, which is a UUID v7 and so sorts by time. Unlike an
+// offset, records added or deleted between requests cannot shift the next page.
 export async function cursorPaginate<T extends { id: string }>(
   query: SelectQueryBuilder<T>,
   { after, limit }: CursorPaginationQueryDto,
 ): Promise<CursorPaginated<T>> {
   if (after) {
-    query.andWhere(`${query.alias}.id > :after`, { after });
+    query.andWhere(`${query.alias}.id < :after`, { after });
   }
   // One extra row shows if there is a next page, without counting them all.
   const rows = await query
-    .orderBy(`${query.alias}.id`, 'ASC')
+    .orderBy(`${query.alias}.id`, 'DESC')
     .limit(limit + 1)
     .getMany();
   const data = rows.slice(0, limit);

@@ -786,16 +786,16 @@ describe('API (e2e)', () => {
         const first = await page('?limit=2');
         expect(first.limit).toBe(2);
         expect(first.nextCursor).toBe(ids[1]);
-        expect(first.data.map((c) => c.id)).toEqual(ids.slice(0, 2));
+        expect(first.data.map((c) => c.id)).toEqual([ids[2], ids[1]]);
 
         // Deleting a comment that was already read must not skip the next one.
-        await http().delete(`/api/comments/${ids[0]}`).expect(204);
+        await http().delete(`/api/comments/${ids[2]}`).expect(204);
 
         const second = await page(`?limit=2&after=${first.nextCursor}`);
         expect(second.nextCursor).toBeNull();
-        expect(second.data.map((c) => c.id)).toEqual(ids.slice(2));
+        expect(second.data.map((c) => c.id)).toEqual([ids[0]]);
 
-        const beyond = await page(`?after=${ids[2]}`);
+        const beyond = await page(`?after=${ids[0]}`);
         expect(beyond).toEqual({ data: [], limit: 20, nextCursor: null });
 
         const posts = await anonymous().get('/api/posts?limit=1').expect(200);
@@ -825,7 +825,7 @@ describe('API (e2e)', () => {
         for (let i = 0; i < 21; i++) {
           ids.push((await createComment(token, post.id)).id);
         }
-        await withToken(token).put(`/api/comments/${ids[0]}/like`).expect(204);
+        await withToken(token).put(`/api/comments/${ids[20]}/like`).expect(204);
 
         const fetched = await withToken(token).get(url).expect(200);
         const { comments, commentsCount } = fetched.body as Post & {
@@ -833,8 +833,8 @@ describe('API (e2e)', () => {
         };
         expect(commentsCount).toBe(21);
         expect(comments.limit).toBe(20);
-        expect(comments.nextCursor).toBe(ids[19]);
-        expect(comments.data.map((c) => c.id)).toEqual(ids.slice(0, 20));
+        expect(comments.nextCursor).toBe(ids[1]);
+        expect(comments.data.map((c) => c.id)).toEqual(ids.slice(1).reverse());
         expect(comments.data[0]).toMatchObject({ likesCount: 1 });
         expect(comments.data[0].myLikeAt).not.toBeNull();
         expect(comments.data[1].myLikeAt).toBeNull();
@@ -843,7 +843,7 @@ describe('API (e2e)', () => {
           .get(`${url}/comments?after=${comments.nextCursor}`)
           .expect(200);
         expect(next.body).toMatchObject({
-          data: [{ id: ids[20], myLikeAt: null }],
+          data: [{ id: ids[0], myLikeAt: null }],
           nextCursor: null,
         });
 
