@@ -50,7 +50,7 @@ export class Post {
   })
   likesCount: number;
 
-  // Not a column: set by LikesService for the user making the request.
+  // Not a column: set by setLikedByMeAt for the user making the request.
   likedByMeAt: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })

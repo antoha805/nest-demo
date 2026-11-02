@@ -4,13 +4,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, Repository } from 'typeorm';
+import { FindManyOptions, FindOptionsWhere, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/authenticated-user';
 import { CaslAbilityFactory } from '../casl/casl-ability.factory';
 import { CategoriesService } from '../categories/categories.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { paginated, Paginated, paginationOptions } from '../common/paginated';
+import { paginate, Paginated } from '../common/paginated';
 import { LikeableType } from '../likes/like.entity';
+import { joinMyLike, setLikedByMeAt } from '../likes/liked-by-me';
 import { LikesService } from '../likes/likes.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
@@ -31,29 +32,33 @@ export class PostsService {
     const { id } = await this.postsRepository.save(
       this.postsRepository.create({ ...dto, authorId }),
     );
-    return this.withLikedByMeAt(await this.findOne(id), authorId);
+    return this.findOneForUser({ id }, authorId);
   }
 
   async findAll(
     query: PaginationQueryDto,
     user?: AuthenticatedUser,
   ): Promise<Paginated<Post>> {
-    const [posts, total] = await this.postsRepository.findAndCount({
-      where: this.visibleWhere(user),
-      relations: { category: true },
-      // The id keeps pages stable when posts share a timestamp.
-      order: { createdAt: 'DESC', id: 'DESC' },
-      ...paginationOptions(query),
-    });
-    await this.likesService.withLikedByMeAt(LikeableType.POST, posts, user?.id);
-    return paginated(posts, total, query);
+    const page = await paginate(
+      this.queryForUser(
+        {
+          where: this.visibleWhere(user),
+          // The id keeps pages stable when posts share a timestamp.
+          order: { createdAt: 'DESC', id: 'DESC' },
+        },
+        user?.id,
+      ),
+      query,
+    );
+    setLikedByMeAt(page.data);
+    return page;
   }
 
-  async findVisibleForUser(
-    id: string,
-    user?: AuthenticatedUser,
-  ): Promise<Post> {
-    return this.withLikedByMeAt(await this.findVisible(id, user), user?.id);
+  findVisibleForUser(id: string, user?: AuthenticatedUser): Promise<Post> {
+    return this.findOneForUser(
+      this.visibleWhere(user).map((where) => ({ ...where, id })),
+      user?.id,
+    );
   }
 
   findVisible(id: string, user?: AuthenticatedUser): Promise<Post> {
@@ -94,7 +99,7 @@ export class PostsService {
       throw new NotFoundException(`Post ${id} not found`);
     }
     await this.postsRepository.save(post);
-    return this.withLikedByMeAt(await this.findOne(id), userId);
+    return this.findOneForUser({ id }, userId);
   }
 
   async remove(id: string): Promise<void> {
@@ -114,13 +119,22 @@ export class PostsService {
     await this.likesService.unlike(LikeableType.POST, id, user.id);
   }
 
-  private async withLikedByMeAt(post: Post, userId?: string): Promise<Post> {
-    const [result] = await this.likesService.withLikedByMeAt(
+  private queryForUser(options: FindManyOptions<Post>, userId?: string) {
+    return joinMyLike(
+      this.postsRepository
+        .createQueryBuilder('post')
+        .setFindOptions({ ...options, relations: { category: true } }),
       LikeableType.POST,
-      [post],
       userId,
     );
-    return result;
+  }
+
+  private async findOneForUser(
+    where: FindOptionsWhere<Post> | FindOptionsWhere<Post>[],
+    userId?: string,
+  ): Promise<Post> {
+    const post = await this.queryForUser({ where }, userId).getOneOrFail();
+    return setLikedByMeAt([post])[0];
   }
 
   private visibleWhere(user?: AuthenticatedUser): FindOptionsWhere<Post>[] {

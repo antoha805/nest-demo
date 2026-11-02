@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindManyOptions, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/authenticated-user';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
-import { paginated, Paginated, paginationOptions } from '../common/paginated';
+import { paginate, Paginated } from '../common/paginated';
 import { LikeableType } from '../likes/like.entity';
+import { joinMyLike, setLikedByMeAt } from '../likes/liked-by-me';
 import { LikesService } from '../likes/likes.service';
 import { PostsService } from '../posts/posts.service';
 import { Comment } from './comment.entity';
@@ -29,7 +30,7 @@ export class CommentsService {
     const { id } = await this.commentsRepository.save(
       this.commentsRepository.create({ ...dto, postId, authorId: user.id }),
     );
-    return this.withLikedByMeAt(await this.findOne(id), user.id);
+    return this.findOneForUser(id, user.id);
   }
 
   async findAllForPost(
@@ -38,18 +39,19 @@ export class CommentsService {
     user?: AuthenticatedUser,
   ): Promise<Paginated<Comment>> {
     await this.postsService.findVisible(postId, user);
-    const [comments, total] = await this.commentsRepository.findAndCount({
-      where: { postId },
-      // The id keeps pages stable when comments share a timestamp.
-      order: { createdAt: 'ASC', id: 'ASC' },
-      ...paginationOptions(query),
-    });
-    await this.likesService.withLikedByMeAt(
-      LikeableType.COMMENT,
-      comments,
-      user?.id,
+    const page = await paginate(
+      this.queryForUser(
+        {
+          where: { postId },
+          // The id keeps pages stable when comments share a timestamp.
+          order: { createdAt: 'ASC', id: 'ASC' },
+        },
+        user?.id,
+      ),
+      query,
     );
-    return paginated(comments, total, query);
+    setLikedByMeAt(page.data);
+    return page;
   }
 
   // A comment is only as visible as its post, so drafts do not leak through it.
@@ -69,7 +71,7 @@ export class CommentsService {
       throw new NotFoundException(`Comment ${id} not found`);
     }
     await this.commentsRepository.save(comment);
-    return this.withLikedByMeAt(await this.findOne(id), userId);
+    return this.findOneForUser(id, userId);
   }
 
   async remove(id: string): Promise<void> {
@@ -89,16 +91,22 @@ export class CommentsService {
     await this.likesService.unlike(LikeableType.COMMENT, id, user.id);
   }
 
-  private async withLikedByMeAt(
-    comment: Comment,
-    userId: string,
-  ): Promise<Comment> {
-    const [result] = await this.likesService.withLikedByMeAt(
+  private queryForUser(options: FindManyOptions<Comment>, userId?: string) {
+    return joinMyLike(
+      this.commentsRepository
+        .createQueryBuilder('comment')
+        .setFindOptions(options),
       LikeableType.COMMENT,
-      [comment],
       userId,
     );
-    return result;
+  }
+
+  private async findOneForUser(id: string, userId: string): Promise<Comment> {
+    const comment = await this.queryForUser(
+      { where: { id } },
+      userId,
+    ).getOneOrFail();
+    return setLikedByMeAt([comment])[0];
   }
 
   private findOne(id: string): Promise<Comment> {

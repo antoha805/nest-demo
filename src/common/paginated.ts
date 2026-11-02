@@ -1,3 +1,4 @@
+import { ObjectLiteral, SelectQueryBuilder } from 'typeorm';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 
 export interface Paginated<T> {
@@ -8,14 +9,15 @@ export interface Paginated<T> {
   totalPages: number;
 }
 
-export function paginationOptions({ page, limit }: PaginationQueryDto) {
-  return { skip: (page - 1) * limit, take: limit };
-}
-
-export function paginated<T>(
-  data: T[],
-  total: number,
+// Uses LIMIT, as TypeORM's take runs an extra query for the ids when there are
+// joins. That query exists for to-many joins, so do not use this with them.
+export async function paginate<T extends ObjectLiteral>(
+  query: SelectQueryBuilder<T>,
   { page, limit }: PaginationQueryDto,
-): Paginated<T> {
+): Promise<Paginated<T>> {
+  const [data, total] = await query
+    .offset((page - 1) * limit)
+    .limit(limit)
+    .getManyAndCount();
   return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
