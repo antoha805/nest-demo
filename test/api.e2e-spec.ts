@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { Server } from 'node:http';
+import { AddressInfo } from 'node:net';
 import { RequestContext } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { INestApplication } from '@nestjs/common';
@@ -13,6 +15,8 @@ import { Comment } from './../src/comments/comment.entity';
 import { CursorPaginated } from './../src/common/cursor-paginated';
 import { Paginated } from './../src/common/paginated';
 import { Like } from './../src/likes/like.entity';
+import { DatabaseNotification } from './../src/notifications/database-notification.entity';
+import { NotificationBroadcaster } from './../src/notifications/notification-broadcaster';
 import { Post } from './../src/posts/post.entity';
 import {
   ADMIN_ROLE,
@@ -1128,6 +1132,276 @@ describe('API (e2e)', () => {
           expect(comment.author).toEqual(author);
         }
         expect(JSON.stringify(bodies)).not.toContain(email);
+      });
+
+      describe('notifications', () => {
+        type Notification = DatabaseNotification;
+
+        // A published post by a new member, who gets its notifications.
+        const createAuthoredPost = async () => {
+          const author = await register();
+          const { id } = await currentUser(author.token);
+          const post = await createPost(author.token);
+          await http()
+            .patch(`/api/posts/${post.id}`)
+            .send({ published: true })
+            .expect(200);
+          return { ...author, id, post };
+        };
+
+        const listNotifications = async (token: string, query = '') => {
+          const response = await withToken(token)
+            .get(`/api/notifications${query}`)
+            .expect(200);
+          return response.body as CursorPaginated<Notification>;
+        };
+
+        const unreadCount = async (token: string) => {
+          const response = await withToken(token)
+            .get('/api/notifications/unread-count')
+            .expect(200);
+          return (response.body as { count: number }).count;
+        };
+
+        const openStream = async (
+          token: string | null,
+          lastEventId?: string,
+        ) => {
+          const server = app.getHttpServer() as unknown as Server;
+          if (!server.listening) {
+            await new Promise<void>((resolve) => server.listen(0, resolve));
+          }
+          const { port } = server.address() as AddressInfo;
+          const abort = new AbortController();
+          const response = await fetch(
+            `http://127.0.0.1:${port}/api/notifications/stream`,
+            {
+              headers: {
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                ...(lastEventId ? { 'Last-Event-ID': lastEventId } : {}),
+              },
+              signal: abort.signal,
+            },
+          );
+          const reader = response
+            .body!.pipeThrough(new TextDecoderStream())
+            .getReader();
+          let buffer = '';
+
+          // The next event, skipping comments such as heartbeats. Null once
+          // the server has ended the stream.
+          const next = async (): Promise<{
+            event?: string;
+            id?: string;
+            data: Notification;
+          } | null> => {
+            for (;;) {
+              const end = buffer.indexOf('\n\n');
+              if (end >= 0) {
+                const fields = new Map(
+                  buffer
+                    .slice(0, end)
+                    .split('\n')
+                    .filter((line) => line && !line.startsWith(':'))
+                    .map((line) => {
+                      const colon = line.indexOf(': ');
+                      return [line.slice(0, colon), line.slice(colon + 2)];
+                    }),
+                );
+                buffer = buffer.slice(end + 2);
+                const data = fields.get('data');
+                if (data) {
+                  return {
+                    event: fields.get('event'),
+                    id: fields.get('id'),
+                    data: JSON.parse(data) as Notification,
+                  };
+                }
+                continue;
+              }
+              const { value, done } = await reader.read();
+              if (done) {
+                return null;
+              }
+              buffer += value;
+            }
+          };
+
+          return { response, next, close: () => abort.abort() };
+        };
+
+        it('notifies post authors of comments by others', async () => {
+          const author = await createAuthoredPost();
+          const commenter = await register();
+          const { id: commenterId } = await currentUser(commenter.token);
+
+          expect(await listNotifications(author.token)).toMatchObject({
+            data: [],
+            nextCursor: null,
+          });
+
+          const comment = await createComment(commenter.token, author.post.id);
+          await createComment(author.token, author.post.id);
+
+          const { data } = await listNotifications(author.token);
+          expect(data).toHaveLength(1);
+          expect(data[0]).toEqual({
+            id: expect.any(String) as string,
+            type: 'post.commented',
+            data: {
+              postId: author.post.id,
+              postTitle: author.post.title,
+              commentId: comment.id,
+              commenter: { id: commenterId, nickname: commenter.nickname },
+            },
+            readAt: null,
+            createdAt: expect.any(String) as string,
+          });
+          expect(JSON.stringify(data)).not.toContain(commenter.email);
+          expect(await unreadCount(author.token)).toBe(1);
+
+          expect((await listNotifications(commenter.token)).data).toEqual([]);
+          expect(await unreadCount(commenter.token)).toBe(0);
+
+          await anonymous().get('/api/notifications').expect(401);
+          await anonymous().get('/api/notifications/unread-count').expect(401);
+        });
+
+        it('pages notifications newest first', async () => {
+          const author = await createAuthoredPost();
+          const comments: Comment[] = [];
+          for (let i = 0; i < 3; i++) {
+            comments.push(await createComment(adminToken, author.post.id));
+          }
+          const commentIds = (page: CursorPaginated<Notification>) =>
+            page.data.map((n) => (n.data as { commentId: string }).commentId);
+
+          const first = await listNotifications(author.token, '?limit=2');
+          expect(commentIds(first)).toEqual([comments[2].id, comments[1].id]);
+          expect(first.nextCursor).toBe(first.data[1].id);
+
+          const second = await listNotifications(
+            author.token,
+            `?limit=2&after=${first.nextCursor}`,
+          );
+          expect(commentIds(second)).toEqual([comments[0].id]);
+          expect(second.nextCursor).toBeNull();
+        });
+
+        it('marks notifications as read and unread', async () => {
+          const author = await createAuthoredPost();
+          const { token: otherToken } = await register();
+          await createComment(adminToken, author.post.id);
+          await createComment(adminToken, author.post.id);
+          const [newer, older] = (await listNotifications(author.token)).data;
+          const readUrl = `/api/notifications/${older.id}/read`;
+
+          await anonymous().put(readUrl).expect(401);
+          await withToken(otherToken).put(readUrl).expect(404);
+          await withToken(otherToken).delete(readUrl).expect(404);
+          await withToken(author.token)
+            .put('/api/notifications/not-a-uuid/read')
+            .expect(400);
+
+          await withToken(author.token).put(readUrl).expect(204);
+          expect(await unreadCount(author.token)).toBe(1);
+          const [, read] = (await listNotifications(author.token)).data;
+          expect(read.readAt).not.toBeNull();
+
+          // Keeps when it was first read.
+          await withToken(author.token).put(readUrl).expect(204);
+          const [, readAgain] = (await listNotifications(author.token)).data;
+          expect(readAgain.readAt).toBe(read.readAt);
+
+          await withToken(author.token).delete(readUrl).expect(204);
+          expect(await unreadCount(author.token)).toBe(2);
+
+          await withToken(author.token)
+            .post('/api/notifications/read-all')
+            .expect(204);
+          expect(await unreadCount(author.token)).toBe(0);
+          const listed = await listNotifications(author.token);
+          expect(listed.data.map((n) => n.id)).toEqual([newer.id, older.id]);
+          expect(listed.data.every((n) => n.readAt)).toBe(true);
+        });
+
+        it('streams notifications as they are sent', async () => {
+          await expect(openStream(null)).resolves.toMatchObject({
+            response: { status: 401 },
+          });
+
+          const author = await createAuthoredPost();
+          const other = await createAuthoredPost();
+          const stream = await openStream(author.token);
+          try {
+            expect(stream.response.status).toBe(200);
+            expect(stream.response.headers.get('content-type')).toContain(
+              'text/event-stream',
+            );
+
+            // Another user's notification does not reach the stream, so the
+            // first event is the author's.
+            await createComment(adminToken, other.post.id);
+            await createComment(adminToken, author.post.id);
+            const event = await stream.next();
+
+            const [stored] = (await listNotifications(author.token)).data;
+            expect(event).toEqual({
+              event: 'notification',
+              id: stored.id,
+              data: stored,
+            });
+          } finally {
+            stream.close();
+          }
+        });
+
+        it('replays the notifications a stream missed', async () => {
+          const author = await createAuthoredPost();
+          await createComment(adminToken, author.post.id);
+          const [seen] = (await listNotifications(author.token)).data;
+
+          // Missed while disconnected, and replayed even once read.
+          await createComment(adminToken, author.post.id);
+          await createComment(adminToken, author.post.id);
+          const [newest, missed] = (await listNotifications(author.token)).data;
+          await withToken(author.token)
+            .put(`/api/notifications/${missed.id}/read`)
+            .expect(204);
+
+          const stream = await openStream(author.token, seen.id);
+          try {
+            expect((await stream.next())?.id).toBe(missed.id);
+            expect((await stream.next())?.id).toBe(newest.id);
+
+            await createComment(adminToken, author.post.id);
+            const [live] = (await listNotifications(author.token)).data;
+            expect((await stream.next())?.id).toBe(live.id);
+          } finally {
+            stream.close();
+          }
+
+          // Without a valid Last-Event-ID, only new ones are sent.
+          const fresh = await openStream(author.token, 'not-a-uuid');
+          try {
+            await createComment(adminToken, author.post.id);
+            const [latest] = (await listNotifications(author.token)).data;
+            expect((await fresh.next())?.id).toBe(latest.id);
+          } finally {
+            fresh.close();
+          }
+        });
+
+        it('ends the streams on shutdown', async () => {
+          const { token } = await register();
+          const stream = await openStream(token);
+          try {
+            app.get(NotificationBroadcaster).beforeApplicationShutdown();
+            await expect(stream.next()).resolves.toBeNull();
+          } finally {
+            stream.close();
+          }
+        });
       });
     });
 

@@ -5,6 +5,7 @@ import { Category } from '../categories/category.entity';
 import { Comment } from '../comments/comment.entity';
 import { EnvironmentVariables } from '../config/env.validation';
 import { Like } from '../likes/like.entity';
+import { DatabaseNotification } from '../notifications/database-notification.entity';
 import { Post } from '../posts/post.entity';
 import { Permission } from '../roles/permission.entity';
 import { Role } from '../roles/role.entity';
@@ -24,7 +25,16 @@ export function createOrmConfig(env: DatabaseEnv) {
     user: env.DB_USERNAME,
     password: env.DB_PASSWORD,
     dbName: env.DB_NAME,
-    entities: [Category, Post, Comment, Like, User, Role, Permission],
+    entities: [
+      Category,
+      Post,
+      Comment,
+      Like,
+      DatabaseNotification,
+      User,
+      Role,
+      Permission,
+    ],
     // The schema names columns after the properties, such as "categoryId".
     namingStrategy: EntityCaseNamingStrategy,
     extensions: [Migrator],

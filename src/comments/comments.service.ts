@@ -7,10 +7,12 @@ import { definedFields } from '../common/defined-fields';
 import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
 import { LikeableType } from '../likes/like.entity';
 import { LikesService } from '../likes/likes.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PostVisibilityService } from '../posts/post-visibility.service';
 import { Comment } from './comment.entity';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
+import { PostCommentedNotification } from './notifications/post-commented.notification';
 
 @Injectable()
 export class CommentsService {
@@ -18,6 +20,7 @@ export class CommentsService {
     private readonly em: EntityManager,
     private readonly postVisibilityService: PostVisibilityService,
     private readonly likesService: LikesService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(
@@ -25,13 +28,20 @@ export class CommentsService {
     dto: CreateCommentDto,
     user: AuthenticatedUser,
   ): Promise<Comment> {
-    await this.postVisibilityService.findVisible(postId, user);
+    const post = await this.postVisibilityService.findVisible(postId, user);
     const comment = this.em.create(Comment, {
       content: dto.content,
       postId,
       author: user.id,
     });
     await this.em.flush();
+    // Not for their own comments, nor once the author has been deleted.
+    if (post.authorId && post.authorId !== user.id) {
+      await this.notificationsService.send(
+        post.authorId,
+        new PostCommentedNotification(post, comment, user),
+      );
+    }
     return this.findOneForUser(comment.id, user.id);
   }
 
