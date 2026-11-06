@@ -57,19 +57,21 @@ export class Post {
   })
   authorId: string | null = null;
 
+  // The counts are lazy, so loading a post to check or change it does not
+  // count them: PostsService populates them for its responses.
   @Formula(
     (cols) =>
       `(SELECT COUNT(*)::int FROM "likes" WHERE "likes"."likeableType" = 'post' AND "likes"."likeableId" = ${cols.id})`,
-    { type: 'integer' },
+    { type: 'integer', lazy: true },
   )
-  likesCount!: Opt<number>;
+  likesCount?: Opt<number>;
 
   @Formula(
     (cols) =>
       `(SELECT COUNT(*)::int FROM "comments" WHERE "comments"."postId" = ${cols.id})`,
-    { type: 'integer' },
+    { type: 'integer', lazy: true },
   )
-  commentsCount!: Opt<number>;
+  commentsCount?: Opt<number>;
 
   // Set by PostsService for the user making the request, so null without one.
   @Property({ type: 'datetime', persist: false })

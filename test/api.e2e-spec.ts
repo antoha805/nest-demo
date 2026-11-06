@@ -1266,6 +1266,72 @@ describe('API (e2e)', () => {
         });
       });
 
+      // The counts are lazy formulas, so every response has to populate them.
+      it('returns the counts from every response with posts or comments', async () => {
+        const { token } = await register();
+        const created = await createPost(adminToken, true);
+        expect(created).toMatchObject({ likesCount: 0, commentsCount: 0 });
+
+        const comment = await createComment(token, created.id);
+        expect(comment).toMatchObject({ likesCount: 0 });
+        await withToken(token).put(`/api/posts/${created.id}/like`).expect(204);
+        await withToken(token)
+          .put(`/api/comments/${comment.id}/like`)
+          .expect(204);
+        const postCounts = { likesCount: 1, commentsCount: 1 };
+        const commentCounts = { likesCount: 1 };
+
+        const list = await anonymous().get('/api/posts?limit=100').expect(200);
+        expect(
+          (list.body as Paginated<Post>).data.find((p) => p.id === created.id),
+        ).toMatchObject(postCounts);
+
+        const single = await anonymous()
+          .get(`/api/posts/${created.id}`)
+          .expect(200);
+        expect(single.body).toMatchObject({
+          ...postCounts,
+          comments: { data: [commentCounts] },
+        });
+
+        const editedPost = await http()
+          .patch(`/api/posts/${created.id}`)
+          .send({ title: 'Edited' })
+          .expect(200);
+        expect(editedPost.body).toMatchObject(postCounts);
+
+        const comments = await anonymous()
+          .get(`/api/posts/${created.id}/comments`)
+          .expect(200);
+        expect(comments.body).toMatchObject({ data: [commentCounts] });
+
+        const editedComment = await withToken(token)
+          .patch(`/api/comments/${comment.id}`)
+          .send({ content: 'Edited' })
+          .expect(200);
+        expect(editedComment.body).toMatchObject(commentCounts);
+
+        // Loading them to check or change them does not count.
+        const execute = jest.spyOn(
+          app.get(EntityManager).getConnection(),
+          'execute',
+        );
+        try {
+          await withToken(token)
+            .delete(`/api/posts/${created.id}/like`)
+            .expect(204);
+          await withToken(token)
+            .delete(`/api/comments/${comment.id}/like`)
+            .expect(204);
+          const sql = execute.mock.calls.map(([query]) => query as string);
+          expect(sql.join('\n')).toMatch(/from "posts"/);
+          expect(sql.join('\n')).toMatch(/from "comments"/);
+          expect(sql.join('\n')).not.toContain('COUNT(*)');
+        } finally {
+          execute.mockRestore();
+        }
+      });
+
       it('keeps comments of deleted users', async () => {
         const { token } = await register();
         const { id: userId } = await currentUser(token);

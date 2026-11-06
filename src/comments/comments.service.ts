@@ -16,6 +16,9 @@ import { UpdateCommentDto } from './dto/update-comment.dto';
 import { CommentLikedNotification } from './notifications/comment-liked.notification';
 import { PostCommentedNotification } from './notifications/post-commented.notification';
 
+// What comment responses show, beyond the comment: the count is a lazy formula.
+const RESPONSE_POPULATE = ['author', 'likesCount'] as const;
+
 @Injectable()
 export class CommentsService {
   constructor(
@@ -67,7 +70,7 @@ export class CommentsService {
         this.em.find(
           Comment,
           { postId, ...(before ? { id: { $lt: before } } : {}) },
-          { populate: ['author'], orderBy: { id: 'desc' }, limit },
+          { populate: RESPONSE_POPULATE, orderBy: { id: 'desc' }, limit },
         ),
       query,
     );
@@ -154,7 +157,7 @@ export class CommentsService {
   private async findOneForUser(id: string, userId: string): Promise<Comment> {
     // Refreshed, so the counts include changes made in this request.
     const comment = await this.em.findOneOrFail(Comment, id, {
-      populate: ['author'],
+      populate: RESPONSE_POPULATE,
       refresh: true,
     });
     await this.setMyLikeAt([comment], userId);

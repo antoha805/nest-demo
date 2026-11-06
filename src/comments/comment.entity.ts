@@ -55,12 +55,14 @@ export class Comment {
     return this.author?.id ?? null;
   }
 
+  // Lazy, so loading a comment to check or change it does not count them:
+  // CommentsService populates it for its responses.
   @Formula(
     (cols) =>
       `(SELECT COUNT(*)::int FROM "likes" WHERE "likes"."likeableType" = 'comment' AND "likes"."likeableId" = ${cols.id})`,
-    { type: 'integer' },
+    { type: 'integer', lazy: true },
   )
-  likesCount!: Opt<number>;
+  likesCount?: Opt<number>;
 
   // Set by CommentsService for the user making the request, so null without one.
   @Property({ type: 'datetime', persist: false })

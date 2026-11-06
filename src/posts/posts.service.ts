@@ -24,6 +24,9 @@ import { PostLikedNotification } from './notifications/post-liked.notification';
 import { PostVisibilityService } from './post-visibility.service';
 import { Post } from './post.entity';
 
+// What post responses show, beyond the post: the counts are lazy formulas.
+const RESPONSE_POPULATE = ['category', 'likesCount', 'commentsCount'] as const;
+
 export type PostWithComments = EntityDTO<Post> & {
   comments: CursorPaginated<Comment>;
 };
@@ -65,7 +68,7 @@ export class PostsService {
           Post,
           this.postVisibilityService.visibleWhere(user),
           {
-            populate: ['category'],
+            populate: RESPONSE_POPULATE,
             // The id keeps pages stable when posts share a timestamp.
             orderBy: { createdAt: 'desc', id: 'desc' },
             limit,
@@ -158,7 +161,7 @@ export class PostsService {
   ): Promise<Post> {
     // Refreshed, so the counts include changes made in this request.
     const post = await this.em.findOneOrFail(Post, where, {
-      populate: ['category'],
+      populate: RESPONSE_POPULATE,
       refresh: true,
     });
     await this.setMyActivity([post], userId);
