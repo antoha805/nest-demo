@@ -169,48 +169,47 @@ Removing a name from that file makes the next sync delete the permission and all
 
 ## Endpoints
 
-| Method | Path                              | Permission                                     | Description                             |
-| ------ | --------------------------------- | ---------------------------------------------- | --------------------------------------- |
-| POST   | `/api/auth/register`              | Public                                         | Create an account                       |
-| POST   | `/api/auth/login`                 | Public                                         | Get an access token                     |
-| GET    | `/api/auth/me`                    | Any logged-in user                             | Get your roles and permissions          |
-| POST   | `/api/auth/verify-email`          | Any logged-in user                             | Confirm your email with the mailed code |
-| POST   | `/api/auth/verify-email/resend`   | Any logged-in user                             | Mail a new code                         |
-| POST   | `/api/categories`                 | `categories.create`                            | Create a category                       |
-| GET    | `/api/categories`                 | Public                                         | List categories                         |
-| GET    | `/api/categories/:id`             | Public                                         | Get a category                          |
-| PATCH  | `/api/categories/:id`             | `categories.update`                            | Update a category                       |
-| DELETE | `/api/categories/:id`             | `categories.delete`                            | Delete a category                       |
-| POST   | `/api/posts`                      | `posts.create`                                 | Create a post                           |
-| GET    | `/api/posts`                      | Public                                         | List posts                              |
-| GET    | `/api/posts/:id`                  | Public                                         | Get a post                              |
-| PATCH  | `/api/posts/:id`                  | `posts.update.all` or `posts.update.own`       | Update a post                           |
-| DELETE | `/api/posts/:id`                  | `posts.delete.all` or `posts.delete.own`       | Delete a post                           |
-| PUT    | `/api/posts/:id/like`             | `posts.like`                                   | Like a post                             |
-| DELETE | `/api/posts/:id/like`             | `posts.like`                                   | Remove your like from a post            |
-| POST   | `/api/posts/:postId/comments`     | `comments.create`                              | Comment on a post                       |
-| GET    | `/api/posts/:postId/comments`     | Public                                         | List a post's comments                  |
-| PATCH  | `/api/comments/:id`               | `comments.update.own`                          | Update your comment                     |
-| DELETE | `/api/comments/:id`               | `comments.delete.all` or `comments.delete.own` | Delete a comment                        |
-| PUT    | `/api/comments/:id/like`          | `comments.like`                                | Like a comment                          |
-| DELETE | `/api/comments/:id/like`          | `comments.like`                                | Remove your like from a comment         |
-| GET    | `/api/users`                      | `users.read`                                   | List users                              |
-| GET    | `/api/users/:id`                  | `users.read`                                   | Get a user                              |
-| PUT    | `/api/users/:id/roles`            | `users.manage`                                 | Replace a user's roles                  |
-| PUT    | `/api/users/:id/permissions`      | `users.manage`                                 | Replace direct permissions              |
-| DELETE | `/api/users/:id`                  | `users.manage`                                 | Delete a user                           |
-| POST   | `/api/roles`                      | `roles.manage`                                 | Create a role                           |
-| GET    | `/api/roles`                      | `roles.read`                                   | List roles                              |
-| GET    | `/api/roles/:id`                  | `roles.read`                                   | Get a role                              |
-| PATCH  | `/api/roles/:id`                  | `roles.manage`                                 | Update a role                           |
-| DELETE | `/api/roles/:id`                  | `roles.manage`                                 | Delete a role                           |
-| GET    | `/api/permissions`                | `roles.read`                                   | List permissions                        |
-| GET    | `/api/notifications`              | Any logged-in user                             | List your notifications                 |
-| GET    | `/api/notifications/unread-count` | Any logged-in user                             | Count your unread notifications         |
-| GET    | `/api/notifications/stream`       | Any logged-in user                             | Receive your notifications live (SSE)   |
-| PUT    | `/api/notifications/:id/read`     | Any logged-in user                             | Mark a notification as read             |
-| DELETE | `/api/notifications/:id/read`     | Any logged-in user                             | Mark a notification as unread           |
-| POST   | `/api/notifications/read-all`     | Any logged-in user                             | Mark all your notifications as read     |
+| Method | Path                            | Permission                                     | Description                                                |
+| ------ | ------------------------------- | ---------------------------------------------- | ---------------------------------------------------------- |
+| POST   | `/api/auth/register`            | Public                                         | Create an account                                          |
+| POST   | `/api/auth/login`               | Public                                         | Get an access token                                        |
+| GET    | `/api/auth/me`                  | Any logged-in user                             | Get your roles, permissions and unread notifications count |
+| POST   | `/api/auth/verify-email`        | Any logged-in user                             | Confirm your email with the mailed code                    |
+| POST   | `/api/auth/verify-email/resend` | Any logged-in user                             | Mail a new code                                            |
+| POST   | `/api/categories`               | `categories.create`                            | Create a category                                          |
+| GET    | `/api/categories`               | Public                                         | List categories                                            |
+| GET    | `/api/categories/:id`           | Public                                         | Get a category                                             |
+| PATCH  | `/api/categories/:id`           | `categories.update`                            | Update a category                                          |
+| DELETE | `/api/categories/:id`           | `categories.delete`                            | Delete a category                                          |
+| POST   | `/api/posts`                    | `posts.create`                                 | Create a post                                              |
+| GET    | `/api/posts`                    | Public                                         | List posts                                                 |
+| GET    | `/api/posts/:id`                | Public                                         | Get a post                                                 |
+| PATCH  | `/api/posts/:id`                | `posts.update.all` or `posts.update.own`       | Update a post                                              |
+| DELETE | `/api/posts/:id`                | `posts.delete.all` or `posts.delete.own`       | Delete a post                                              |
+| PUT    | `/api/posts/:id/like`           | `posts.like`                                   | Like a post                                                |
+| DELETE | `/api/posts/:id/like`           | `posts.like`                                   | Remove your like from a post                               |
+| POST   | `/api/posts/:postId/comments`   | `comments.create`                              | Comment on a post                                          |
+| GET    | `/api/posts/:postId/comments`   | Public                                         | List a post's comments                                     |
+| PATCH  | `/api/comments/:id`             | `comments.update.own`                          | Update your comment                                        |
+| DELETE | `/api/comments/:id`             | `comments.delete.all` or `comments.delete.own` | Delete a comment                                           |
+| PUT    | `/api/comments/:id/like`        | `comments.like`                                | Like a comment                                             |
+| DELETE | `/api/comments/:id/like`        | `comments.like`                                | Remove your like from a comment                            |
+| GET    | `/api/users`                    | `users.read`                                   | List users                                                 |
+| GET    | `/api/users/:id`                | `users.read`                                   | Get a user                                                 |
+| PUT    | `/api/users/:id/roles`          | `users.manage`                                 | Replace a user's roles                                     |
+| PUT    | `/api/users/:id/permissions`    | `users.manage`                                 | Replace direct permissions                                 |
+| DELETE | `/api/users/:id`                | `users.manage`                                 | Delete a user                                              |
+| POST   | `/api/roles`                    | `roles.manage`                                 | Create a role                                              |
+| GET    | `/api/roles`                    | `roles.read`                                   | List roles                                                 |
+| GET    | `/api/roles/:id`                | `roles.read`                                   | Get a role                                                 |
+| PATCH  | `/api/roles/:id`                | `roles.manage`                                 | Update a role                                              |
+| DELETE | `/api/roles/:id`                | `roles.manage`                                 | Delete a role                                              |
+| GET    | `/api/permissions`              | `roles.read`                                   | List permissions                                           |
+| GET    | `/api/notifications`            | Any logged-in user                             | List your notifications                                    |
+| GET    | `/api/notifications/stream`     | Any logged-in user                             | Receive your notifications live (SSE)                      |
+| PUT    | `/api/notifications/:id/read`   | Any logged-in user                             | Mark a notification as read                                |
+| DELETE | `/api/notifications/:id/read`   | Any logged-in user                             | Mark a notification as unread                              |
+| POST   | `/api/notifications/read-all`   | Any logged-in user                             | Mark all your notifications as read                        |
 
 A category that still has posts cannot be deleted (`409 Conflict`). Categories return `postsCount`, which only counts published posts, so it is the same for every user and does not reveal drafts.
 
@@ -258,6 +257,8 @@ await fetchEventSource('/api/notifications/stream', {
 ```
 
 It sends `Last-Event-ID` when it reconnects, and the stream first replays the notifications missed since that one, oldest first, at most the newest 100. The token is checked when the stream opens, so restart it with a new token when the old one expires.
+
+For a notification badge, `GET /api/auth/me` returns `unreadNotificationsCount`. Each time the stream opens, after the replay, it also sends an `unread-count` event, as `{ "count": 3 }`: set the badge to it, add one for each `notification` event after it, and subtract one for each notification marked as read. So the badge is right again after every reconnection, including for notifications read on another device. Its `id` is the newest notification's, which the count includes, so a reconnection resumes after it.
 
 The streams are kept in memory, which works while a single instance of the app runs. Running more would need them shared, such as through Postgres `LISTEN/NOTIFY`.
 

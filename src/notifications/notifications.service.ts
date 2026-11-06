@@ -1,4 +1,5 @@
 import { randomUUIDv7 } from 'node:crypto';
+import { raw } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { isUUID } from 'class-validator';
@@ -22,6 +23,11 @@ import {
 // At most this many missed notifications are replayed to a stream, the newest.
 // Clients can list the rest.
 export const MAX_REPLAYED = 100;
+
+export type StreamEvent =
+  | { type: 'notification'; notification: BroadcastNotification }
+  // The user's unread notifications, up to and including the newest they have.
+  | { type: 'unread-count'; count: number; newestId: string | null };
 
 @Injectable()
 export class NotificationsService {
@@ -100,13 +106,8 @@ export class NotificationsService {
     );
   }
 
-  async unreadCount(userId: string): Promise<{ count: number }> {
-    return {
-      count: await this.em.count(DatabaseNotification, {
-        userId,
-        readAt: null,
-      }),
-    };
+  countUnread(userId: string): Promise<number> {
+    return this.em.count(DatabaseNotification, { userId, readAt: null });
   }
 
   // Keeps when it was first read.
@@ -131,30 +132,40 @@ export class NotificationsService {
   }
 
   // The user's notifications as they are sent. After lastEventId, the id of the
-  // last one a client received, those it missed come first.
-  stream(
-    userId: string,
-    lastEventId?: string,
-  ): Observable<BroadcastNotification> {
+  // last one a client received, those it missed come first. Then the unread
+  // count, which every notification after it adds one to, so a client's badge
+  // is right again after each (re)connection.
+  stream(userId: string, lastEventId?: string): Observable<StreamEvent> {
     return new Observable((subscriber) => {
+      const send = (notification: BroadcastNotification) =>
+        subscriber.next({ type: 'notification', notification });
+
       // Subscribed before the missed ones are read, so none is lost in between.
-      // Those sent meanwhile wait, as they are newer.
+      // Those sent meanwhile wait.
       let waiting: BroadcastNotification[] | null = [];
       const live = this.broadcaster.subscribe(userId).subscribe({
         next: (notification) =>
-          waiting ? waiting.push(notification) : subscriber.next(notification),
+          waiting ? waiting.push(notification) : send(notification),
         complete: () => subscriber.complete(),
       });
 
-      this.findMissed(userId, lastEventId).then(
-        (missed) => {
+      (async () => {
+        const missed = await this.findMissed(userId, lastEventId);
+        return { missed, ...(await this.unreadSnapshot(userId)) };
+      })().then(
+        ({ missed, count, newestId }) => {
+          missed.forEach(send);
+          subscriber.next({ type: 'unread-count', count, newestId });
           const replayed = new Set(missed.map(({ id }) => id));
-          for (const notification of [
-            ...missed,
-            // A notification sent while the missed ones were read can be both.
-            ...(waiting ?? []).filter(({ id }) => !replayed.has(id)),
-          ]) {
-            subscriber.next(notification);
+          for (const notification of waiting ?? []) {
+            // Those up to the newest are in the count already. Ids are UUID v7
+            // in lowercase, so they compare by time as strings.
+            if (
+              !replayed.has(notification.id) &&
+              (!newestId || notification.id > newestId)
+            ) {
+              send(notification);
+            }
           }
           waiting = null;
         },
@@ -163,6 +174,20 @@ export class NotificationsService {
 
       return () => live.unsubscribe();
     });
+  }
+
+  // In one statement, so the count and the newest id describe the same moment.
+  private async unreadSnapshot(
+    userId: string,
+  ): Promise<{ count: number; newestId: string | null }> {
+    return this.em
+      .createQueryBuilder(DatabaseNotification)
+      .select([
+        raw('COUNT(*) FILTER (WHERE "readAt" IS NULL)::int AS "count"'),
+        raw('MAX("id"::text) AS "newestId"'),
+      ])
+      .where({ userId })
+      .execute('get', false);
   }
 
   private async findMissed(

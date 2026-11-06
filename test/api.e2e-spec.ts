@@ -1344,9 +1344,10 @@ describe('API (e2e)', () => {
 
         const unreadCount = async (token: string) => {
           const response = await withToken(token)
-            .get('/api/notifications/unread-count')
+            .get('/api/auth/me')
             .expect(200);
-          return (response.body as { count: number }).count;
+          return (response.body as { unreadNotificationsCount: number })
+            .unreadNotificationsCount;
         };
 
         const openStream = async (
@@ -1379,7 +1380,7 @@ describe('API (e2e)', () => {
           const next = async (): Promise<{
             event?: string;
             id?: string;
-            data: Notification;
+            data: unknown;
           } | null> => {
             for (;;) {
               const end = buffer.indexOf('\n\n');
@@ -1400,7 +1401,7 @@ describe('API (e2e)', () => {
                   return {
                     event: fields.get('event'),
                     id: fields.get('id'),
-                    data: JSON.parse(data) as Notification,
+                    data: JSON.parse(data) as unknown,
                   };
                 }
                 continue;
@@ -1413,7 +1414,26 @@ describe('API (e2e)', () => {
             }
           };
 
-          return { response, next, close: () => abort.abort() };
+          // The next notification, skipping unread counts.
+          const nextNotification = async () => {
+            for (;;) {
+              const event = await next();
+              if (!event || event.event === 'notification') {
+                return event as {
+                  event: string;
+                  id: string;
+                  data: Notification;
+                } | null;
+              }
+            }
+          };
+
+          return {
+            response,
+            next,
+            nextNotification,
+            close: () => abort.abort(),
+          };
         };
 
         it('notifies post authors of comments by others', async () => {
@@ -1450,7 +1470,6 @@ describe('API (e2e)', () => {
           expect(await unreadCount(commenter.token)).toBe(0);
 
           await anonymous().get('/api/notifications').expect(401);
-          await anonymous().get('/api/notifications/unread-count').expect(401);
         });
 
         it('notifies authors of new likes by others', async () => {
@@ -1568,7 +1587,7 @@ describe('API (e2e)', () => {
             // first event is the author's.
             await createComment(adminToken, other.post.id);
             await createComment(adminToken, author.post.id);
-            const event = await stream.next();
+            const event = await stream.nextNotification();
 
             const [stored] = (await listNotifications(author.token)).data;
             expect(event).toEqual({
@@ -1596,12 +1615,12 @@ describe('API (e2e)', () => {
 
           const stream = await openStream(author.token, seen.id);
           try {
-            expect((await stream.next())?.id).toBe(missed.id);
-            expect((await stream.next())?.id).toBe(newest.id);
+            expect((await stream.nextNotification())?.id).toBe(missed.id);
+            expect((await stream.nextNotification())?.id).toBe(newest.id);
 
             await createComment(adminToken, author.post.id);
             const [live] = (await listNotifications(author.token)).data;
-            expect((await stream.next())?.id).toBe(live.id);
+            expect((await stream.nextNotification())?.id).toBe(live.id);
           } finally {
             stream.close();
           }
@@ -1611,10 +1630,58 @@ describe('API (e2e)', () => {
           try {
             await createComment(adminToken, author.post.id);
             const [latest] = (await listNotifications(author.token)).data;
-            expect((await fresh.next())?.id).toBe(latest.id);
+            expect((await fresh.nextNotification())?.id).toBe(latest.id);
           } finally {
             fresh.close();
           }
+        });
+
+        it('sends the unread count after the missed notifications', async () => {
+          const author = await createAuthoredPost();
+
+          // Without notifications there is nothing to resume after.
+          const empty = await openStream(author.token);
+          try {
+            expect(await empty.next()).toEqual({
+              event: 'unread-count',
+              id: '',
+              data: { count: 0 },
+            });
+          } finally {
+            empty.close();
+          }
+
+          await createComment(adminToken, author.post.id);
+          await createComment(adminToken, author.post.id);
+          const [newest, older] = (await listNotifications(author.token)).data;
+          await withToken(author.token)
+            .put(`/api/notifications/${older.id}/read`)
+            .expect(204);
+
+          const stream = await openStream(author.token, older.id);
+          try {
+            expect(await stream.next()).toMatchObject({
+              event: 'notification',
+              id: newest.id,
+            });
+            // Resumes after the newest, which the count includes.
+            expect(await stream.next()).toEqual({
+              event: 'unread-count',
+              id: newest.id,
+              data: { count: 1 },
+            });
+
+            // Later ones add to the count.
+            await createComment(adminToken, author.post.id);
+            const [live] = (await listNotifications(author.token)).data;
+            expect(await stream.next()).toMatchObject({
+              event: 'notification',
+              id: live.id,
+            });
+          } finally {
+            stream.close();
+          }
+          expect(await unreadCount(author.token)).toBe(2);
         });
 
         it('ends the streams on shutdown', async () => {
@@ -1622,7 +1689,7 @@ describe('API (e2e)', () => {
           const stream = await openStream(token);
           try {
             app.get(NotificationBroadcaster).beforeApplicationShutdown();
-            await expect(stream.next()).resolves.toBeNull();
+            await expect(stream.nextNotification()).resolves.toBeNull();
           } finally {
             stream.close();
           }

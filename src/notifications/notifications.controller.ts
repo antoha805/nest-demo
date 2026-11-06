@@ -26,10 +26,25 @@ import {
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
-import { NotificationsService } from './notifications.service';
+import { NotificationsService, StreamEvent } from './notifications.service';
 
 // Proxies and load balancers close connections that stay quiet for long.
 export const HEARTBEAT_INTERVAL_MS = 25_000;
+
+function toMessageEvent(event: StreamEvent): MessageEvent {
+  if (event.type === 'notification') {
+    const { notification } = event;
+    return { type: 'notification', id: notification.id, data: notification };
+  }
+  // Every event needs an id, or Nest numbers it, and a client reconnecting
+  // with that number would miss the replay. This one resumes after the newest
+  // notification, which the count includes. Empty while there is none.
+  return {
+    type: 'unread-count',
+    id: event.newestId ?? '',
+    data: { count: event.count },
+  };
+}
 
 // Every route is for the user's own notifications, so needs no permission.
 @Controller('notifications')
@@ -44,35 +59,25 @@ export class NotificationsController {
     return this.notificationsService.findAll(user.id, query);
   }
 
-  @Get('unread-count')
-  unreadCount(@CurrentUser() user: AuthenticatedUser) {
-    return this.notificationsService.unreadCount(user.id);
-  }
-
   // Each notification is a "notification" event whose id is the notification's.
-  // A client reconnecting with Last-Event-ID first gets those it missed. It has
-  // to send the token as a header, which EventSource cannot, so browsers use a
-  // client such as @microsoft/fetch-event-source.
+  // A client reconnecting with Last-Event-ID first gets those it missed, then
+  // an "unread-count" event, whose count the later notifications add to. It
+  // has to send the token as a header, which EventSource cannot, so browsers
+  // use a client such as @microsoft/fetch-event-source.
   @Sse('stream')
   stream(
     @CurrentUser() user: AuthenticatedUser,
     @Headers('last-event-id') lastEventId?: string,
   ): Observable<MessageEvent> {
-    const notifications = this.notificationsService
+    const events = this.notificationsService
       .stream(user.id, lastEventId)
       .pipe(share());
     return merge(
-      notifications.pipe(
-        map((notification): MessageEvent => ({
-          type: 'notification',
-          id: notification.id,
-          data: notification,
-        })),
-      ),
+      events.pipe(map(toMessageEvent)),
       // Stops with the notifications, such as on shutdown, so the stream ends.
       interval(HEARTBEAT_INTERVAL_MS).pipe(
         map((): MessageEvent => ({ comment: 'heartbeat' })),
-        takeUntil(notifications.pipe(ignoreElements(), endWith(null))),
+        takeUntil(events.pipe(ignoreElements(), endWith(null))),
       ),
     );
   }
