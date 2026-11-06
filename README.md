@@ -223,7 +223,7 @@ The channels run in that order and all use the same id, so a broadcast always na
 
 Sent so far, each to the author when someone else acts, and never for the user's own actions:
 
-- `post.commented`: someone commented on their post.
+- `post.commented`: someone commented on their post. Also mailed, with the comment cut to 200 characters and a link to `APP_URL/posts/:id`.
 - `post.liked`: someone liked their post.
 - `comment.liked`: someone liked their comment.
 

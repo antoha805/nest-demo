@@ -1551,17 +1551,51 @@ describe('API (e2e)', () => {
             expect(mailerSend).not.toHaveBeenCalled();
           });
 
-          it('is left out of notifications by default', async () => {
+          it('is left out of likes', async () => {
             const author = await createAuthoredPost();
-            await createComment(adminToken, author.post.id);
+            const comment = await createComment(author.token, author.post.id);
             await withToken(adminToken)
               .put(`/api/posts/${author.post.id}/like`)
+              .expect(204);
+            await withToken(adminToken)
+              .put(`/api/comments/${comment.id}/like`)
               .expect(204);
 
             expect((await listNotifications(author.token)).data).toHaveLength(
               2,
             );
             expect(mailerSend).not.toHaveBeenCalled();
+          });
+
+          it('mails post authors about comments, with an excerpt', async () => {
+            const author = await createAuthoredPost();
+            const { nickname: commenter } = await currentUser(adminToken);
+            const { id: postId, title } = author.post;
+            const long = `${'word '.repeat(60)}\n\nend`;
+            await withToken(adminToken)
+              .post(`/api/posts/${postId}/comments`)
+              .send({ content: long })
+              .expect(201);
+
+            expect(mailerSend).toHaveBeenCalledTimes(1);
+            const [mail] = mailerSend.mock.calls[0] as [Mail];
+            const excerpt = `${'word '.repeat(39)}word…`;
+            expect(mail).toMatchObject({
+              to: author.email,
+              subject: `New comment on "${title}"`,
+              text: [
+                `Hi ${author.nickname}!`,
+                `${commenter} commented on your post "${title}":`,
+                excerpt,
+                `View the post: http://app.test/posts/${postId}`,
+              ].join('\n\n'),
+            });
+            expect(excerpt).toHaveLength(200);
+            expect(mail.text).not.toContain('end');
+
+            // Not for their own comments.
+            await createComment(author.token, postId);
+            expect(mailerSend).toHaveBeenCalledTimes(1);
           });
         });
       });
