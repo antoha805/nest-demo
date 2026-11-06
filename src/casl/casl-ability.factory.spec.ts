@@ -12,6 +12,7 @@ describe('CaslAbilityFactory', () => {
     const user: AuthenticatedUser = {
       id: 'me',
       email: 'me@example.com',
+      nickname: 'me',
       roles: [],
       permissions,
     };

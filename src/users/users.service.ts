@@ -50,6 +50,14 @@ export class UsersService {
     return this.em.findOne(User, { email }, { fields: ['id', 'passwordHash'] });
   }
 
+  async setNickname(id: string, nickname: string): Promise<User> {
+    const user = await this.findOne(id);
+    // A nickname another user has fails the unique constraint, giving a 409.
+    user.nickname = nickname;
+    await this.em.flush();
+    return user;
+  }
+
   async setRoles(id: string, roles: string[]): Promise<User> {
     const user = await this.findOne(id);
     user.roles.set(await this.rolesService.findRolesByNames(roles));

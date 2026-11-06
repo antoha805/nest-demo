@@ -2,8 +2,10 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcrypt';
 import { UsersService } from '../users/users.service';
+import { AuthenticatedUser, toAuthenticatedUser } from './authenticated-user';
 import { CredentialsDto } from './dto/credentials.dto';
 import { RegisterDto } from './dto/register.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 const BCRYPT_ROUNDS = 12;
 // Compared for unknown emails, so they take as long to reject as wrong passwords.
@@ -30,6 +32,15 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
     return this.issueToken(user.id);
+  }
+
+  async updateProfile(
+    userId: string,
+    { nickname }: UpdateProfileDto,
+  ): Promise<AuthenticatedUser> {
+    return toAuthenticatedUser(
+      await this.usersService.setNickname(userId, nickname),
+    );
   }
 
   private async issueToken(userId: string) {

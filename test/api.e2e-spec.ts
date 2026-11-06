@@ -55,6 +55,7 @@ describe('API (e2e)', () => {
     return response.body as {
       id: string;
       email: string;
+      nickname: string;
       roles: string[];
       permissions: string[];
     };
@@ -267,6 +268,37 @@ describe('API (e2e)', () => {
         .post('/api/auth/register')
         .send({ email, nickname: uniqueNickname(), password })
         .expect(409);
+    });
+
+    it('lets users change their nickname', async () => {
+      const { token, email, nickname } = await register();
+      const { nickname: taken } = await register();
+      const me = (body: object) =>
+        withToken(token).patch('/api/auth/me').send(body);
+      await expect(currentUser(token)).resolves.toMatchObject({ nickname });
+
+      const changed = uniqueNickname();
+      const updated = await me({ nickname: changed.toUpperCase() }).expect(200);
+      expect(updated.body).toMatchObject({ email, nickname: changed });
+      await expect(currentUser(token)).resolves.toMatchObject({
+        nickname: changed,
+      });
+      await me({ nickname: changed }).expect(200);
+
+      await me({ nickname: taken }).expect(409);
+      await me({}).expect(400);
+      await me({ nickname: 'ab' }).expect(400);
+      await me({ nickname: uniqueNickname(), email: 'x@example.com' }).expect(
+        400,
+      );
+      await anonymous()
+        .patch('/api/auth/me')
+        .send({ nickname: uniqueNickname() })
+        .expect(401);
+      await expect(currentUser(token)).resolves.toMatchObject({
+        email,
+        nickname: changed,
+      });
     });
 
     it('requires a unique, valid nickname', async () => {
@@ -1068,6 +1100,13 @@ describe('API (e2e)', () => {
 
         const created = await createComment(token, post.id);
         expect(created.author).toEqual(author);
+
+        // Comments show the nickname the author has now.
+        author.nickname = uniqueNickname();
+        await withToken(token)
+          .patch('/api/auth/me')
+          .send({ nickname: author.nickname })
+          .expect(200);
 
         const edited = await withToken(token)
           .patch(`/api/comments/${created.id}`)

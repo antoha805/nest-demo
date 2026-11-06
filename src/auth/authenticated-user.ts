@@ -4,6 +4,7 @@ import { User } from '../users/user.entity';
 export interface AuthenticatedUser {
   id: string;
   email: string;
+  nickname: string;
   roles: string[];
   permissions: string[];
 }
@@ -21,6 +22,7 @@ export function toAuthenticatedUser(user: User): AuthenticatedUser {
   return {
     id: user.id,
     email: user.email,
+    nickname: user.nickname,
     roles: user.roles.getItems().map((role) => role.name),
     permissions: [...new Set(permissions)].sort(),
   };
