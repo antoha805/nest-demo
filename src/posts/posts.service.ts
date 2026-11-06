@@ -1,15 +1,17 @@
+import { EntityDTO, FilterQuery, wrap } from '@mikro-orm/core';
+import { EntityManager } from '@mikro-orm/postgresql';
 import {
   BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { FindManyOptions, FindOptionsWhere, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/authenticated-user';
 import { CategoriesService } from '../categories/categories.service';
+import { Category } from '../categories/category.entity';
 import { Comment } from '../comments/comment.entity';
 import { CommentsService } from '../comments/comments.service';
 import { CursorPaginated } from '../common/cursor-paginated';
+import { definedFields } from '../common/defined-fields';
 import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { paginate, Paginated } from '../common/paginated';
@@ -20,42 +22,57 @@ import { UpdatePostDto } from './dto/update-post.dto';
 import { PostVisibilityService } from './post-visibility.service';
 import { Post } from './post.entity';
 
-export type PostWithComments = Post & { comments: CursorPaginated<Comment> };
+export type PostWithComments = EntityDTO<Post> & {
+  comments: CursorPaginated<Comment>;
+};
 
 @Injectable()
 export class PostsService {
   constructor(
-    @InjectRepository(Post)
-    private readonly postsRepository: Repository<Post>,
+    private readonly em: EntityManager,
     private readonly categoriesService: CategoriesService,
     private readonly postVisibilityService: PostVisibilityService,
     private readonly likesService: LikesService,
     private readonly commentsService: CommentsService,
   ) {}
 
-  async create(dto: CreatePostDto, authorId: string): Promise<Post> {
-    await this.assertCategoryExists(dto.categoryId);
-    const { id } = await this.postsRepository.save(
-      this.postsRepository.create({ ...dto, authorId }),
-    );
-    return this.findOneForUser({ id }, authorId);
+  async create(
+    { categoryId, ...dto }: CreatePostDto,
+    authorId: string,
+  ): Promise<Post> {
+    await this.assertCategoryExists(categoryId);
+    const post = this.em.create(Post, {
+      title: dto.title,
+      content: dto.content,
+      published: dto.published ?? false,
+      category: categoryId,
+      authorId,
+    });
+    await this.em.flush();
+    return this.findOneForUser({ id: post.id }, authorId);
   }
 
-  findAll(
+  async findAll(
     query: PaginationQueryDto,
     user?: AuthenticatedUser,
   ): Promise<Paginated<Post>> {
-    return paginate(
-      this.queryForUser(
-        {
-          where: this.postVisibilityService.visibleWhere(user),
-          // The id keeps pages stable when posts share a timestamp.
-          order: { createdAt: 'DESC', id: 'DESC' },
-        },
-        user?.id,
-      ),
+    const page = await paginate(
+      ({ limit, offset }) =>
+        this.em.findAndCount(
+          Post,
+          this.postVisibilityService.visibleWhere(user),
+          {
+            populate: ['category'],
+            // The id keeps pages stable when posts share a timestamp.
+            orderBy: { createdAt: 'desc', id: 'desc' },
+            limit,
+            offset,
+          },
+        ),
       query,
     );
+    await this.setMyActivity(page.data, user?.id);
+    return page;
   }
 
   async findVisibleWithComments(
@@ -63,9 +80,7 @@ export class PostsService {
     user?: AuthenticatedUser,
   ): Promise<PostWithComments> {
     const post = await this.findOneForUser(
-      this.postVisibilityService
-        .visibleWhere(user)
-        .map((where) => ({ ...where, id })),
+      { ...this.postVisibilityService.visibleWhere(user), id },
       user?.id,
     );
     const comments = await this.commentsService.findPageForPost(
@@ -73,19 +88,16 @@ export class PostsService {
       new CursorPaginationQueryDto(),
       user?.id,
     );
-    return { ...post, comments };
+    return { ...wrap(post).toObject(), comments };
   }
 
   findOne(id: string): Promise<Post> {
-    return this.postsRepository.findOneOrFail({
-      where: { id },
-      relations: { category: true },
-    });
+    return this.em.findOneOrFail(Post, id, { populate: ['category'] });
   }
 
   async update(
     id: string,
-    dto: UpdatePostDto,
+    { categoryId, ...dto }: UpdatePostDto,
     {
       keepPublished,
       userId,
@@ -94,25 +106,27 @@ export class PostsService {
       userId: string;
     },
   ): Promise<Post> {
-    if (dto.categoryId) {
-      await this.assertCategoryExists(dto.categoryId);
+    if (categoryId) {
+      await this.assertCategoryExists(categoryId);
     }
-    const post = await this.postsRepository.preload({
-      id,
-      ...dto,
-      // Otherwise an approved post could be rewritten without review.
-      ...(keepPublished ? {} : { published: false }),
-    });
+    const post = await this.em.findOne(Post, id);
     if (!post) {
       throw new NotFoundException(`Post ${id} not found`);
     }
-    await this.postsRepository.save(post);
+    Object.assign(post, definedFields(dto));
+    if (categoryId) {
+      post.category = this.em.getReference(Category, categoryId);
+    }
+    // Otherwise an approved post could be rewritten without review.
+    if (!keepPublished) {
+      post.published = false;
+    }
+    await this.em.flush();
     return this.findOneForUser({ id }, userId);
   }
 
   async remove(id: string): Promise<void> {
-    const { affected } = await this.postsRepository.delete(id);
-    if (!affected) {
+    if (!(await this.em.nativeDelete(Post, { id }))) {
       throw new NotFoundException(`Post ${id} not found`);
     }
   }
@@ -127,23 +141,32 @@ export class PostsService {
     await this.likesService.unlike(LikeableType.POST, id, user.id);
   }
 
-  private queryForUser(options: FindManyOptions<Post>, userId?: string) {
-    return this.postsRepository
-      .createQueryBuilder('post')
-      .setFindOptions({ ...options, relations: { category: true } })
-      .addSelect(['post.myLikeAt', 'post.myLastCommentAt'])
-      .setParameters({
-        // Without a user the subqueries match nothing, which gives null.
-        myLikeUserId: userId ?? null,
-        myLastCommentUserId: userId ?? null,
-      });
-  }
-
-  private findOneForUser(
-    where: FindOptionsWhere<Post> | FindOptionsWhere<Post>[],
+  private async findOneForUser(
+    where: FilterQuery<Post>,
     userId?: string,
   ): Promise<Post> {
-    return this.queryForUser({ where }, userId).getOneOrFail();
+    // Refreshed, so the counts include changes made in this request.
+    const post = await this.em.findOneOrFail(Post, where, {
+      populate: ['category'],
+      refresh: true,
+    });
+    await this.setMyActivity([post], userId);
+    return post;
+  }
+
+  // Without a user both stay null.
+  private async setMyActivity(posts: Post[], userId?: string): Promise<void> {
+    const ids = posts.map((post) => post.id);
+    const likedAt = await this.likesService.likedAt(
+      LikeableType.POST,
+      ids,
+      userId,
+    );
+    const commentedAt = await this.commentsService.lastCommentedAt(ids, userId);
+    for (const post of posts) {
+      post.myLikeAt = likedAt.get(post.id) ?? null;
+      post.myLastCommentAt = commentedAt.get(post.id) ?? null;
+    }
   }
 
   private async assertCategoryExists(categoryId: string): Promise<void> {

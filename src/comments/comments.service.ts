@@ -1,8 +1,9 @@
+import { raw } from '@mikro-orm/core';
+import { EntityManager } from '@mikro-orm/postgresql';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { FindManyOptions, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/authenticated-user';
 import { cursorPaginate, CursorPaginated } from '../common/cursor-paginated';
+import { definedFields } from '../common/defined-fields';
 import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
 import { LikeableType } from '../likes/like.entity';
 import { LikesService } from '../likes/likes.service';
@@ -14,8 +15,7 @@ import { UpdateCommentDto } from './dto/update-comment.dto';
 @Injectable()
 export class CommentsService {
   constructor(
-    @InjectRepository(Comment)
-    private readonly commentsRepository: Repository<Comment>,
+    private readonly em: EntityManager,
     private readonly postVisibilityService: PostVisibilityService,
     private readonly likesService: LikesService,
   ) {}
@@ -26,10 +26,13 @@ export class CommentsService {
     user: AuthenticatedUser,
   ): Promise<Comment> {
     await this.postVisibilityService.findVisible(postId, user);
-    const { id } = await this.commentsRepository.save(
-      this.commentsRepository.create({ ...dto, postId, authorId: user.id }),
-    );
-    return this.findOneForUser(id, user.id);
+    const comment = this.em.create(Comment, {
+      content: dto.content,
+      postId,
+      authorId: user.id,
+    });
+    await this.em.flush();
+    return this.findOneForUser(comment.id, user.id);
   }
 
   async findAllForPost(
@@ -42,20 +45,27 @@ export class CommentsService {
   }
 
   // The caller has to check that the user can read the post.
-  findPageForPost(
+  async findPageForPost(
     postId: string,
     query: CursorPaginationQueryDto,
     userId?: string,
   ): Promise<CursorPaginated<Comment>> {
-    return cursorPaginate(
-      this.queryForUser({ where: { postId } }, userId),
+    const page = await cursorPaginate(
+      ({ before, limit }) =>
+        this.em.find(
+          Comment,
+          { postId, ...(before ? { id: { $lt: before } } : {}) },
+          { orderBy: { id: 'desc' }, limit },
+        ),
       query,
     );
+    await this.setMyLikeAt(page.data, userId);
+    return page;
   }
 
   // A comment is only as visible as its post, so drafts do not leak through it.
   async findVisible(id: string, user: AuthenticatedUser): Promise<Comment> {
-    const comment = await this.findOne(id);
+    const comment = await this.em.findOneOrFail(Comment, id);
     await this.postVisibilityService.findVisible(comment.postId, user);
     return comment;
   }
@@ -65,17 +75,17 @@ export class CommentsService {
     dto: UpdateCommentDto,
     userId: string,
   ): Promise<Comment> {
-    const comment = await this.commentsRepository.preload({ id, ...dto });
+    const comment = await this.em.findOne(Comment, id);
     if (!comment) {
       throw new NotFoundException(`Comment ${id} not found`);
     }
-    await this.commentsRepository.save(comment);
+    Object.assign(comment, definedFields(dto));
+    await this.em.flush();
     return this.findOneForUser(id, userId);
   }
 
   async remove(id: string): Promise<void> {
-    const { affected } = await this.commentsRepository.delete(id);
-    if (!affected) {
+    if (!(await this.em.nativeDelete(Comment, { id }))) {
       throw new NotFoundException(`Comment ${id} not found`);
     }
   }
@@ -90,22 +100,38 @@ export class CommentsService {
     await this.likesService.unlike(LikeableType.COMMENT, id, user.id);
   }
 
-  private queryForUser(options: FindManyOptions<Comment>, userId?: string) {
-    return (
-      this.commentsRepository
-        .createQueryBuilder('comment')
-        .setFindOptions(options)
-        .addSelect('comment.myLikeAt')
-        // Without a user the subquery matches nothing, which gives null.
-        .setParameter('myLikeUserId', userId ?? null)
+  // When the user last commented on each of these posts, by post id.
+  async lastCommentedAt(
+    postIds: string[],
+    userId?: string,
+  ): Promise<Map<string, Date>> {
+    if (!userId || !postIds.length) {
+      return new Map();
+    }
+    const rows = await this.em
+      .createQueryBuilder(Comment)
+      .select(['postId', raw('MAX("createdAt") AS "lastAt"')])
+      .where({ authorId: userId, postId: { $in: postIds } })
+      .groupBy('postId')
+      .execute<{ postId: string; lastAt: Date }[]>('all', false);
+    return new Map(rows.map((row) => [row.postId, row.lastAt]));
+  }
+
+  private async findOneForUser(id: string, userId: string): Promise<Comment> {
+    // Refreshed, so the counts include changes made in this request.
+    const comment = await this.em.findOneOrFail(Comment, id, { refresh: true });
+    await this.setMyLikeAt([comment], userId);
+    return comment;
+  }
+
+  private async setMyLikeAt(comments: Comment[], userId?: string) {
+    const likedAt = await this.likesService.likedAt(
+      LikeableType.COMMENT,
+      comments.map((comment) => comment.id),
+      userId,
     );
-  }
-
-  private findOneForUser(id: string, userId: string): Promise<Comment> {
-    return this.queryForUser({ where: { id } }, userId).getOneOrFail();
-  }
-
-  private findOne(id: string): Promise<Comment> {
-    return this.commentsRepository.findOneByOrFail({ id });
+    for (const comment of comments) {
+      comment.myLikeAt = likedAt.get(comment.id) ?? null;
+    }
   }
 }

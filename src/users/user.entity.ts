@@ -1,46 +1,54 @@
+import { Collection, type Opt } from '@mikro-orm/core';
 import {
-  Column,
-  CreateDateColumn,
   Entity,
-  JoinTable,
   ManyToMany,
-  PrimaryColumn,
-  UpdateDateColumn,
-} from 'typeorm';
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/decorators/legacy';
 import { Permission } from '../roles/permission.entity';
 import { Role } from '../roles/role.entity';
 
-@Entity('users')
+@Entity({ tableName: 'users' })
 export class User {
-  @PrimaryColumn({ type: 'uuid', default: () => 'uuidv7()' })
-  id: string;
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'uuidv7()' })
+  id!: Opt<string>;
 
-  @Column({ type: 'varchar', length: 254, unique: true })
-  email: string;
+  @Property({ type: 'varchar', length: 254, unique: true })
+  email!: string;
 
-  @Column({ type: 'varchar', length: 60, select: false })
-  passwordHash: string;
+  // Only loaded by UsersService.findCredentials, and never serialized.
+  @Property({ type: 'varchar', length: 60, lazy: true, hidden: true })
+  passwordHash!: string;
 
-  @ManyToMany(() => Role)
-  @JoinTable({
-    name: 'user_roles',
-    joinColumn: { name: 'userId' },
-    inverseJoinColumn: { name: 'roleId' },
+  @ManyToMany({
+    entity: () => Role,
+    pivotTable: 'user_roles',
+    joinColumn: 'userId',
+    inverseJoinColumn: 'roleId',
   })
-  roles: Role[];
+  roles = new Collection<Role>(this);
 
   // Granted directly, in addition to those from the user's roles.
-  @ManyToMany(() => Permission)
-  @JoinTable({
-    name: 'user_permissions',
-    joinColumn: { name: 'userId' },
-    inverseJoinColumn: { name: 'permissionId' },
+  @ManyToMany({
+    entity: () => Permission,
+    pivotTable: 'user_permissions',
+    joinColumn: 'userId',
+    inverseJoinColumn: 'permissionId',
   })
-  permissions: Permission[];
+  permissions = new Collection<Permission>(this);
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt: Date;
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+  })
+  createdAt: Opt<Date> = new Date();
 
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt: Date;
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+    onUpdate: () => new Date(),
+  })
+  updatedAt: Opt<Date> = new Date();
 }

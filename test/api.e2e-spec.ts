@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { RequestContext } from '@mikro-orm/core';
+import { EntityManager } from '@mikro-orm/postgresql';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { DataSource } from 'typeorm';
 import { AppModule } from './../src/app.module';
 import { AuthService } from './../src/auth/auth.service';
 import { syncPermissions } from './../src/database/sync-permissions';
@@ -34,12 +35,15 @@ describe('API (e2e)', () => {
   const uniqueName = () => `e2e-${randomUUID()}`;
   const password = 'correct horse battery';
 
+  // Each use gets its own identity map, like a request does.
+  const em = () => app.get(EntityManager).fork();
+
   // Skips the controller, as tests create more users than its rate limit allows.
   const register = async () => {
     const email = `${uniqueName()}@example.com`;
-    const { accessToken } = await app
-      .get(AuthService)
-      .register({ email, password });
+    const { accessToken } = await RequestContext.create(em(), () =>
+      app.get(AuthService).register({ email, password }),
+    );
     return { email, token: accessToken };
   };
 
@@ -72,15 +76,10 @@ describe('API (e2e)', () => {
 
     const { token } = await register();
     const { id } = await currentUser(token);
-    const dataSource = app.get(DataSource);
-    const admin = await dataSource.manager.findOneByOrFail(Role, {
-      name: ADMIN_ROLE,
-    });
-    await dataSource
-      .createQueryBuilder()
-      .relation(User, 'roles')
-      .of(id)
-      .add(admin.id);
+    const manager = em();
+    const user = await manager.findOneOrFail(User, id, { populate: ['roles'] });
+    user.roles.add(await manager.findOneOrFail(Role, { name: ADMIN_ROLE }));
+    await manager.flush();
     adminToken = token;
   });
 
@@ -581,7 +580,7 @@ describe('API (e2e)', () => {
       };
 
       const countLikes = (likeableId: string) =>
-        app.get(DataSource).manager.countBy(Like, { likeableId });
+        em().count(Like, { likeableId });
 
       it('lets members manage their own comments', async () => {
         const { token } = await register();
@@ -1042,7 +1041,7 @@ describe('API (e2e)', () => {
     });
 
     describe('permission sync', () => {
-      const sync = () => app.get(DataSource).transaction(syncPermissions);
+      const sync = () => em().transactional(syncPermissions);
       const roleNamed = async (name: string) => {
         const roles = await http().get('/api/roles').expect(200);
         return (roles.body as Role[]).find((r) => r.name === name) as Role;
@@ -1051,29 +1050,29 @@ describe('API (e2e)', () => {
         (await roleNamed(name)).permissions.map((p) => p.name);
 
       it('deletes permissions that are no longer in the code', async () => {
-        const manager = app.get(DataSource).manager;
-        const stale = await manager.save(Permission, {
-          name: 'old.permission',
-        });
-        const member = await roleNamed('member');
-        await manager
-          .createQueryBuilder()
-          .relation(Role, 'permissions')
-          .of(member.id)
-          .add(stale.id);
+        const manager = em();
+        const member = await manager.findOneOrFail(
+          Role,
+          { name: 'member' },
+          { populate: ['permissions'] },
+        );
+        member.permissions.add(
+          manager.create(Permission, { name: 'old.permission' }),
+        );
+        await manager.flush();
 
         await sync();
 
         await expect(
-          manager.existsBy(Permission, { name: 'old.permission' }),
-        ).resolves.toBe(false);
+          em().count(Permission, { name: 'old.permission' }),
+        ).resolves.toBe(0);
         expect(await permissionsOf('member')).not.toContain('old.permission');
       });
 
       it('grants new permissions to the roles that default to them', async () => {
-        const manager = app.get(DataSource).manager;
-        await manager.delete(Permission, { name: PERMISSIONS.COMMENTS_LIKE });
-        await manager.delete(Permission, { name: PERMISSIONS.POSTS_PUBLISH });
+        await em().nativeDelete(Permission, {
+          name: [PERMISSIONS.COMMENTS_LIKE, PERMISSIONS.POSTS_PUBLISH],
+        });
 
         await sync();
 

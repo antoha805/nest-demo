@@ -1,55 +1,53 @@
+import { EntityManager } from '@mikro-orm/postgresql';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { definedFields } from '../common/defined-fields';
 import { Category } from './category.entity';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
 @Injectable()
 export class CategoriesService {
-  constructor(
-    @InjectRepository(Category)
-    private readonly categoriesRepository: Repository<Category>,
-  ) {}
+  constructor(private readonly em: EntityManager) {}
 
   async create(dto: CreateCategoryDto): Promise<Category> {
-    const { id } = await this.categoriesRepository.save(
-      this.categoriesRepository.create(dto),
-    );
-    return this.findOne(id);
+    const category = this.em.create(Category, {
+      name: dto.name,
+      description: dto.description ?? null,
+    });
+    await this.em.flush();
+    return this.findOne(category.id);
   }
 
   findAll(): Promise<Category[]> {
-    return this.query()
-      .setFindOptions({ order: { name: 'ASC' } })
-      .getMany();
+    return this.em.find(
+      Category,
+      {},
+      { populate: ['postsCount'], orderBy: { name: 'asc' } },
+    );
   }
 
   findOne(id: string): Promise<Category> {
-    return this.query().setFindOptions({ where: { id } }).getOneOrFail();
+    // Refreshed, so the count includes changes made in this request.
+    return this.em.findOneOrFail(Category, id, {
+      populate: ['postsCount'],
+      refresh: true,
+    });
   }
 
-  exists(id: string): Promise<boolean> {
-    return this.categoriesRepository.existsBy({ id });
+  async exists(id: string): Promise<boolean> {
+    return (await this.em.count(Category, { id })) > 0;
   }
 
   async update(id: string, dto: UpdateCategoryDto): Promise<Category> {
     const category = await this.findOne(id);
-    return this.categoriesRepository.save(
-      this.categoriesRepository.merge(category, dto),
-    );
+    Object.assign(category, definedFields(dto));
+    await this.em.flush();
+    return category;
   }
 
   async remove(id: string): Promise<void> {
-    const { affected } = await this.categoriesRepository.delete(id);
-    if (!affected) {
+    if (!(await this.em.nativeDelete(Category, { id }))) {
       throw new NotFoundException(`Category ${id} not found`);
     }
-  }
-
-  private query() {
-    return this.categoriesRepository
-      .createQueryBuilder('category')
-      .addSelect('category.postsCount');
   }
 }

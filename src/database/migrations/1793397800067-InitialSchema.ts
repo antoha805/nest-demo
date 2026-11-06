@@ -1,36 +1,37 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { Migration } from '@mikro-orm/migrations';
 
-export class InitialSchema1793397800067 implements MigrationInterface {
-  name = 'InitialSchema1793397800067';
+export class InitialSchema1793397800067 extends Migration {
+  override name = 'InitialSchema1793397800067';
 
-  public async up(queryRunner: QueryRunner): Promise<void> {
+  override async up(): Promise<void> {
     // Databases created by the former `synchronize: true` already have this schema.
-    if (await queryRunner.hasTable('categories')) {
-      await queryRunner.query(
-        `ALTER TABLE "posts" ALTER COLUMN "id" SET DEFAULT uuidv7()`,
-      );
-      await queryRunner.query(
+    const [{ exists }] = await this.execute(
+      `SELECT to_regclass('"categories"') IS NOT NULL AS "exists"`,
+    );
+    if (exists) {
+      this.addSql(`ALTER TABLE "posts" ALTER COLUMN "id" SET DEFAULT uuidv7()`);
+      this.addSql(
         `ALTER TABLE "categories" ALTER COLUMN "id" SET DEFAULT uuidv7()`,
       );
       return;
     }
 
-    await queryRunner.query(
+    this.addSql(
       `CREATE TABLE "posts" ("id" uuid NOT NULL DEFAULT uuidv7(), "title" character varying(200) NOT NULL, "content" text NOT NULL, "published" boolean NOT NULL DEFAULT false, "categoryId" uuid NOT NULL, "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "PK_2829ac61eff60fcec60d7274b9e" PRIMARY KEY ("id"))`,
     );
-    await queryRunner.query(
+    this.addSql(
       `CREATE TABLE "categories" ("id" uuid NOT NULL DEFAULT uuidv7(), "name" character varying(100) NOT NULL, "description" text, "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "UQ_8b0be371d28245da6e4f4b61878" UNIQUE ("name"), CONSTRAINT "PK_24dbc6126a28ff948da33e97d3b" PRIMARY KEY ("id"))`,
     );
-    await queryRunner.query(
+    this.addSql(
       `ALTER TABLE "posts" ADD CONSTRAINT "FK_168bf21b341e2ae340748e2541d" FOREIGN KEY ("categoryId") REFERENCES "categories"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`,
     );
   }
 
-  public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
+  override down(): void {
+    this.addSql(
       `ALTER TABLE "posts" DROP CONSTRAINT "FK_168bf21b341e2ae340748e2541d"`,
     );
-    await queryRunner.query(`DROP TABLE "categories"`);
-    await queryRunner.query(`DROP TABLE "posts"`);
+    this.addSql(`DROP TABLE "categories"`);
+    this.addSql(`DROP TABLE "posts"`);
   }
 }

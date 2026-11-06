@@ -1,33 +1,40 @@
+import { Collection, type Opt } from '@mikro-orm/core';
 import {
-  Column,
-  CreateDateColumn,
   Entity,
-  JoinTable,
   ManyToMany,
-  PrimaryColumn,
-  UpdateDateColumn,
-} from 'typeorm';
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/decorators/legacy';
 import { Permission } from './permission.entity';
 
-@Entity('roles')
+@Entity({ tableName: 'roles' })
 export class Role {
-  @PrimaryColumn({ type: 'uuid', default: () => 'uuidv7()' })
-  id: string;
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'uuidv7()' })
+  id!: Opt<string>;
 
-  @Column({ type: 'varchar', length: 100, unique: true })
-  name: string;
+  @Property({ type: 'varchar', length: 100, unique: true })
+  name!: string;
 
-  @ManyToMany(() => Permission)
-  @JoinTable({
-    name: 'role_permissions',
-    joinColumn: { name: 'roleId' },
-    inverseJoinColumn: { name: 'permissionId' },
+  @ManyToMany({
+    entity: () => Permission,
+    pivotTable: 'role_permissions',
+    joinColumn: 'roleId',
+    inverseJoinColumn: 'permissionId',
   })
-  permissions: Permission[];
+  permissions = new Collection<Permission>(this);
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt: Date;
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+  })
+  createdAt: Opt<Date> = new Date();
 
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt: Date;
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+    onUpdate: () => new Date(),
+  })
+  updatedAt: Opt<Date> = new Date();
 }

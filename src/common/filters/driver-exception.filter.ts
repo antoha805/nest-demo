@@ -1,3 +1,4 @@
+import { DriverException } from '@mikro-orm/core';
 import {
   ArgumentsHost,
   BadRequestException,
@@ -6,23 +7,20 @@ import {
   HttpException,
 } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
-import { QueryFailedError } from 'typeorm';
 
 const PG_RESTRICT_VIOLATION = '23001';
 const PG_NOT_NULL_VIOLATION = '23502';
 const PG_FOREIGN_KEY_VIOLATION = '23503';
 const PG_UNIQUE_VIOLATION = '23505';
 
-@Catch(QueryFailedError)
-export class QueryFailedFilter extends BaseExceptionFilter {
-  catch(exception: QueryFailedError, host: ArgumentsHost) {
+@Catch(DriverException)
+export class DriverExceptionFilter extends BaseExceptionFilter {
+  catch(exception: DriverException, host: ArgumentsHost) {
     super.catch(this.toHttpException(exception) ?? exception, host);
   }
 
-  private toHttpException(exception: QueryFailedError): HttpException | null {
-    const { code } = exception.driverError as { code?: string };
-
-    switch (code) {
+  private toHttpException(exception: DriverException): HttpException | null {
+    switch (exception.code) {
       case PG_NOT_NULL_VIOLATION:
         return new BadRequestException('A required field cannot be null');
       case PG_RESTRICT_VIOLATION:

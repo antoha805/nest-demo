@@ -1,61 +1,75 @@
+import type { Opt } from '@mikro-orm/core';
 import {
-  Column,
-  CreateDateColumn,
   Entity,
+  Formula,
   Index,
-  JoinColumn,
   ManyToOne,
-  PrimaryColumn,
-  UpdateDateColumn,
-  VirtualColumn,
-} from 'typeorm';
+  PrimaryKey,
+  Property,
+  Trigger,
+} from '@mikro-orm/decorators/legacy';
 import { Post } from '../posts/post.entity';
 import { User } from '../users/user.entity';
 
-@Entity('comments')
+@Entity({ tableName: 'comments' })
+// Deletes the likes, as they cannot have a foreign key. Created by a migration,
+// and declared here so the schema diff does not drop it.
+@Trigger({
+  name: 'comments_delete_likes',
+  timing: 'after',
+  events: ['delete'],
+  expression: `CREATE TRIGGER "comments_delete_likes" AFTER DELETE ON "comments" FOR EACH ROW EXECUTE FUNCTION "delete_likes"('comment')`,
+})
 // Serves the cursor pagination of a post's comments.
-@Index(['postId', 'id'])
+@Index({ properties: ['postId', 'id'] })
 export class Comment {
-  @PrimaryColumn({ type: 'uuid', default: () => 'uuidv7()' })
-  id: string;
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'uuidv7()' })
+  id!: Opt<string>;
 
-  @Column({ type: 'text' })
-  content: string;
+  @Property({ type: 'text' })
+  content!: string;
 
-  @Column({ type: 'uuid' })
-  postId: string;
-
-  @ManyToOne(() => Post, { nullable: false, onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'postId' })
-  post: Post;
+  @ManyToOne(() => Post, {
+    fieldName: 'postId',
+    mapToPk: true,
+    deleteRule: 'cascade',
+    updateRule: 'no action',
+  })
+  postId!: string;
 
   // Null after the author is deleted.
-  @Column({ type: 'uuid', nullable: true })
-  authorId: string | null;
-
-  @ManyToOne(() => User, { onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'authorId' })
-  author: User | null;
-
-  @VirtualColumn({
-    type: 'int',
-    query: (alias) =>
-      `SELECT COUNT(*)::int FROM "likes" WHERE "likes"."likeableType" = 'comment' AND "likes"."likeableId" = ${alias}."id"`,
+  @ManyToOne(() => User, {
+    fieldName: 'authorId',
+    mapToPk: true,
+    nullable: true,
+    deleteRule: 'set null',
+    updateRule: 'no action',
   })
-  likesCount: number;
+  authorId: string | null = null;
 
-  // Only loaded by CommentsService.queryForUser, which sets the parameter.
-  @VirtualColumn({
-    type: 'timestamptz',
-    select: false,
-    query: (alias) =>
-      `SELECT "likes"."createdAt" FROM "likes" WHERE "likes"."likeableType" = 'comment' AND "likes"."likeableId" = ${alias}."id" AND "likes"."userId" = :myLikeUserId`,
+  @Formula(
+    (cols) =>
+      `(SELECT COUNT(*)::int FROM "likes" WHERE "likes"."likeableType" = 'comment' AND "likes"."likeableId" = ${cols.id})`,
+    { type: 'integer' },
+  )
+  likesCount!: Opt<number>;
+
+  // Set by CommentsService for the user making the request, so null without one.
+  @Property({ type: 'datetime', persist: false })
+  myLikeAt?: Date | null;
+
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
   })
-  myLikeAt: Date | null;
+  createdAt: Opt<Date> = new Date();
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt: Date;
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+    onUpdate: () => new Date(),
+  })
+  updatedAt: Opt<Date> = new Date();
 }

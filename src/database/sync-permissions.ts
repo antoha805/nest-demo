@@ -1,4 +1,7 @@
-import { EntityManager, In, Not } from 'typeorm';
+import { existsSync } from 'node:fs';
+import { EntityManager, MikroORM } from '@mikro-orm/postgresql';
+import 'reflect-metadata';
+import { validate } from '../config/env.validation';
 import { Permission } from '../roles/permission.entity';
 import {
   ADMIN_ROLE,
@@ -6,54 +9,57 @@ import {
   PERMISSION_NAMES,
 } from '../roles/permission-names';
 import { Role } from '../roles/role.entity';
-import dataSource from './data-source';
+import { createOrmConfig } from './mikro-orm.config';
 
 // Safe to re-run. The code owns the permissions, as the API can only assign them.
-export async function syncPermissions(manager: EntityManager): Promise<void> {
-  await manager.delete(Permission, { name: Not(In(PERMISSION_NAMES)) });
-  const existing = await manager.find(Permission);
+export async function syncPermissions(em: EntityManager): Promise<void> {
+  await em.nativeDelete(Permission, { name: { $nin: PERMISSION_NAMES } });
+  const existing = await em.find(Permission, {});
   const existingNames = new Set(existing.map((p) => p.name));
 
-  await manager
-    .createQueryBuilder()
-    .insert()
-    .into(Permission)
-    .values(PERMISSION_NAMES.map((name) => ({ name })))
-    .orIgnore()
+  await em
+    .createQueryBuilder(Permission)
+    .insert(PERMISSION_NAMES.map((name) => ({ name })))
+    .onConflict('name')
+    .ignore()
     .execute();
-  const permissions = await manager.find(Permission);
+  const permissions = await em.find(Permission, {}, { refresh: true });
 
-  const admin = await manager.findOneBy(Role, { name: ADMIN_ROLE });
-  await manager.save(Role, {
-    ...(admin ?? { name: ADMIN_ROLE }),
-    permissions,
-  });
+  const admin =
+    (await em.findOne(
+      Role,
+      { name: ADMIN_ROLE },
+      { populate: ['permissions'] },
+    )) ?? em.create(Role, { name: ADMIN_ROLE });
+  admin.permissions.set(permissions);
 
   for (const [name, defaults] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
     const names: string[] = defaults;
-    const role = await manager.findOne(Role, {
-      where: { name },
-      relations: { permissions: true },
-    });
+    const role = await em.findOne(
+      Role,
+      { name },
+      { populate: ['permissions'] },
+    );
     // An existing role only gets new permissions, so edits made through the API
     // are kept: a default that was removed from it stays removed.
     const granted = permissions.filter(
       (p) => names.includes(p.name) && (!role || !existingNames.has(p.name)),
     );
-    await manager.save(Role, {
-      ...(role ?? { name }),
-      permissions: [...(role?.permissions ?? []), ...granted],
-    });
+    (role ?? em.create(Role, { name })).permissions.add(granted);
   }
+  await em.flush();
 }
 
 async function main() {
-  await dataSource.initialize();
+  if (existsSync('.env')) {
+    process.loadEnvFile();
+  }
+  const orm = await MikroORM.init(createOrmConfig(validate(process.env)));
   try {
-    await dataSource.transaction(syncPermissions);
+    await orm.em.fork().transactional(syncPermissions);
     console.log(`Synced ${PERMISSION_NAMES.length} permissions`);
   } finally {
-    await dataSource.destroy();
+    await orm.close();
   }
 }
 

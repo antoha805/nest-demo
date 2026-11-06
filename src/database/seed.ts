@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { EntityManager } from '@mikro-orm/postgresql';
 import { NestFactory } from '@nestjs/core';
 import { hash } from 'bcrypt';
-import { DataSource, In } from 'typeorm';
 import { AppModule } from '../app.module';
 import { Category } from '../categories/category.entity';
 import { Comment } from '../comments/comment.entity';
@@ -104,77 +104,82 @@ async function seed() {
   });
 
   try {
-    const dataSource = app.get(DataSource);
+    await app
+      .get(EntityManager)
+      .fork()
+      .transactional(async (em) => {
+        await em.upsertMany(Category, categories, {
+          onConflictFields: ['name'],
+        });
+        const savedCategories = await em.find(Category, {});
+        const categoryIds = new Map(savedCategories.map((c) => [c.name, c.id]));
 
-    await dataSource.transaction(async (manager) => {
-      await manager.upsert(Category, categories, ['name']);
-      const savedCategories = await manager.find(Category);
-      const categoryIds = new Map(savedCategories.map((c) => [c.name, c.id]));
-
-      let created = 0;
-      for (const { category, ...post } of posts) {
-        if (!(await manager.existsBy(Post, { title: post.title }))) {
-          const categoryId = categoryIds.get(category);
-          await manager.insert(Post, { ...post, categoryId });
-          created++;
-        }
-      }
-
-      // The password is random and thrown away, so nobody can log in as them.
-      const passwordHash = await hash(randomUUID(), 12);
-      let createdUsers = 0;
-      for (const email of [ANA, BEN, CLEO]) {
-        if (!(await manager.existsBy(User, { email }))) {
-          await manager.insert(User, { email, passwordHash });
-          createdUsers++;
-        }
-      }
-      const savedUsers = await manager.findBy(User, {
-        email: In([ANA, BEN, CLEO]),
-      });
-      const userIds = new Map(savedUsers.map((u) => [u.email, u.id]));
-      const userId = (email: string) => userIds.get(email) as string;
-
-      let createdLikes = 0;
-      const addLikes = async (
-        likeableType: LikeableType,
-        likeableId: string,
-        likedBy: string[],
-      ) => {
-        for (const email of likedBy) {
-          const like = { likeableType, likeableId, userId: userId(email) };
-          if (!(await manager.existsBy(Like, like))) {
-            await manager.insert(Like, like);
-            createdLikes++;
+        let created = 0;
+        for (const { category, ...post } of posts) {
+          if (!(await em.count(Post, { title: post.title }))) {
+            await em.insert(Post, {
+              ...post,
+              category: categoryIds.get(category) as string,
+            });
+            created++;
           }
         }
-      };
-      const postId = async (title: string) =>
-        (await manager.findOneByOrFail(Post, { title })).id;
 
-      for (const { post, likedBy } of postLikes) {
-        await addLikes(LikeableType.POST, await postId(post), likedBy);
-      }
-
-      let createdComments = 0;
-      for (const { post, author, content, likedBy } of comments) {
-        const comment = {
-          postId: await postId(post),
-          authorId: userId(author),
-          content,
-        };
-        let saved = await manager.findOneBy(Comment, comment);
-        if (!saved) {
-          saved = await manager.save(Comment, comment);
-          createdComments++;
+        // The password is random and thrown away, so nobody can log in as them.
+        const passwordHash = await hash(randomUUID(), 12);
+        let createdUsers = 0;
+        for (const email of [ANA, BEN, CLEO]) {
+          if (!(await em.count(User, { email }))) {
+            await em.insert(User, { email, passwordHash });
+            createdUsers++;
+          }
         }
-        await addLikes(LikeableType.COMMENT, saved.id, likedBy);
-      }
+        const savedUsers = await em.find(User, {
+          email: { $in: [ANA, BEN, CLEO] },
+        });
+        const userIds = new Map(savedUsers.map((u) => [u.email, u.id]));
+        const userId = (email: string) => userIds.get(email) as string;
 
-      console.log(
-        `Upserted ${categories.length} categories, created ${created} posts, ${createdUsers} users, ${createdComments} comments and ${createdLikes} likes`,
-      );
-    });
+        let createdLikes = 0;
+        const addLikes = async (
+          likeableType: LikeableType,
+          likeableId: string,
+          likedBy: string[],
+        ) => {
+          for (const email of likedBy) {
+            const like = { likeableType, likeableId, userId: userId(email) };
+            if (!(await em.count(Like, like))) {
+              await em.insert(Like, like);
+              createdLikes++;
+            }
+          }
+        };
+        const postId = async (title: string) =>
+          (await em.findOneOrFail(Post, { title })).id;
+
+        for (const { post, likedBy } of postLikes) {
+          await addLikes(LikeableType.POST, await postId(post), likedBy);
+        }
+
+        let createdComments = 0;
+        for (const { post, author, content, likedBy } of comments) {
+          const comment = {
+            postId: await postId(post),
+            authorId: userId(author),
+            content,
+          };
+          let id = (await em.findOne(Comment, comment))?.id;
+          if (!id) {
+            id = await em.insert(Comment, comment);
+            createdComments++;
+          }
+          await addLikes(LikeableType.COMMENT, id, likedBy);
+        }
+
+        console.log(
+          `Upserted ${categories.length} categories, created ${created} posts, ${createdUsers} users, ${createdComments} comments and ${createdLikes} likes`,
+        );
+      });
   } finally {
     await app.close();
   }

@@ -14,14 +14,14 @@ export interface AuthenticatedRequest extends Request {
 
 export function toAuthenticatedUser(user: User): AuthenticatedUser {
   const permissions = [
-    ...user.permissions,
-    ...user.roles.flatMap((role) => role.permissions),
+    ...user.permissions.getItems(),
+    ...user.roles.getItems().flatMap((role) => role.permissions.getItems()),
   ].map((permission) => permission.name);
 
   return {
     id: user.id,
     email: user.email,
-    roles: user.roles.map((role) => role.name),
+    roles: user.roles.getItems().map((role) => role.name),
     permissions: [...new Set(permissions)].sort(),
   };
 }

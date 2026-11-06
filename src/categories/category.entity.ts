@@ -1,41 +1,43 @@
+import type { Opt } from '@mikro-orm/core';
 import {
-  Column,
-  CreateDateColumn,
   Entity,
-  OneToMany,
-  PrimaryColumn,
-  UpdateDateColumn,
-  VirtualColumn,
-} from 'typeorm';
-import { Post } from '../posts/post.entity';
+  Formula,
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/decorators/legacy';
 
-@Entity('categories')
+@Entity({ tableName: 'categories' })
 export class Category {
-  @PrimaryColumn({ type: 'uuid', default: () => 'uuidv7()' })
-  id: string;
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'uuidv7()' })
+  id!: Opt<string>;
 
-  @Column({ type: 'varchar', length: 100, unique: true })
-  name: string;
+  @Property({ type: 'varchar', length: 100, unique: true })
+  name!: string;
 
-  @Column({ type: 'text', nullable: true })
-  description: string | null;
-
-  @OneToMany(() => Post, (post) => post.category)
-  posts: Post[];
+  @Property({ type: 'text', nullable: true })
+  description: string | null = null;
 
   // Published only, as categories are public and drafts must stay hidden.
-  // Only loaded by CategoriesService.query, so posts do not count it per row.
-  @VirtualColumn({
-    type: 'int',
-    select: false,
-    query: (alias) =>
-      `SELECT COUNT(*)::int FROM "posts" WHERE "posts"."categoryId" = ${alias}."id" AND "posts"."published"`,
+  // Lazy, so posts do not count it per row: CategoriesService populates it.
+  @Formula(
+    (cols) =>
+      `(SELECT COUNT(*)::int FROM "posts" WHERE "posts"."categoryId" = ${cols.id} AND "posts"."published")`,
+    { type: 'integer', lazy: true },
+  )
+  postsCount?: number;
+
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
   })
-  postsCount: number;
+  createdAt: Opt<Date> = new Date();
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt: Date;
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+    onUpdate: () => new Date(),
+  })
+  updatedAt: Opt<Date> = new Date();
 }

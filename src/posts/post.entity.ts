@@ -1,85 +1,96 @@
+import type { Opt } from '@mikro-orm/core';
 import {
-  Column,
-  CreateDateColumn,
   Entity,
+  Formula,
   Index,
-  JoinColumn,
   ManyToOne,
-  PrimaryColumn,
-  UpdateDateColumn,
-  VirtualColumn,
-} from 'typeorm';
+  PrimaryKey,
+  Property,
+  Trigger,
+} from '@mikro-orm/decorators/legacy';
 import { Category } from '../categories/category.entity';
 import { User } from '../users/user.entity';
 
-@Entity('posts')
+@Entity({ tableName: 'posts' })
+// Deletes the likes, as they cannot have a foreign key. Created by a migration,
+// and declared here so the schema diff does not drop it.
+@Trigger({
+  name: 'posts_delete_likes',
+  timing: 'after',
+  events: ['delete'],
+  expression: `CREATE TRIGGER "posts_delete_likes" AFTER DELETE ON "posts" FOR EACH ROW EXECUTE FUNCTION "delete_likes"('post')`,
+})
 export class Post {
-  @PrimaryColumn({ type: 'uuid', default: () => 'uuidv7()' })
-  id: string;
+  @PrimaryKey({ type: 'uuid', defaultRaw: 'uuidv7()' })
+  id!: Opt<string>;
 
-  @Column({ type: 'varchar', length: 200 })
-  title: string;
+  @Property({ type: 'varchar', length: 200 })
+  title!: string;
 
-  @Column({ type: 'text' })
-  content: string;
+  @Property({ type: 'text' })
+  content!: string;
 
-  @Column({ type: 'boolean', default: false })
-  published: boolean;
+  @Property({ type: 'boolean', default: false })
+  published: Opt<boolean> = false;
 
   @Index()
-  @Column({ type: 'uuid' })
-  categoryId: string;
-
-  @ManyToOne(() => Category, (category) => category.posts, {
-    nullable: false,
-    onDelete: 'RESTRICT',
+  @ManyToOne(() => Category, {
+    fieldName: 'categoryId',
+    deleteRule: 'restrict',
+    updateRule: 'no action',
   })
-  @JoinColumn({ name: 'categoryId' })
-  category: Category;
+  category!: Category;
+
+  @Property({ type: 'uuid', persist: false })
+  get categoryId(): Opt<string> {
+    return this.category.id;
+  }
 
   // Null for posts from before authors, and after the author is deleted.
-  @Column({ type: 'uuid', nullable: true })
-  authorId: string | null;
-
-  @ManyToOne(() => User, { onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'authorId' })
-  author: User | null;
-
-  @VirtualColumn({
-    type: 'int',
-    query: (alias) =>
-      `SELECT COUNT(*)::int FROM "likes" WHERE "likes"."likeableType" = 'post' AND "likes"."likeableId" = ${alias}."id"`,
+  // Mapped to the id alone, as no route returns the author.
+  @ManyToOne(() => User, {
+    fieldName: 'authorId',
+    mapToPk: true,
+    nullable: true,
+    deleteRule: 'set null',
+    updateRule: 'no action',
   })
-  likesCount: number;
+  authorId: string | null = null;
 
-  // Only loaded by PostsService.queryForUser, which sets the parameter.
-  @VirtualColumn({
-    type: 'timestamptz',
-    select: false,
-    query: (alias) =>
-      `SELECT "likes"."createdAt" FROM "likes" WHERE "likes"."likeableType" = 'post' AND "likes"."likeableId" = ${alias}."id" AND "likes"."userId" = :myLikeUserId`,
+  @Formula(
+    (cols) =>
+      `(SELECT COUNT(*)::int FROM "likes" WHERE "likes"."likeableType" = 'post' AND "likes"."likeableId" = ${cols.id})`,
+    { type: 'integer' },
+  )
+  likesCount!: Opt<number>;
+
+  @Formula(
+    (cols) =>
+      `(SELECT COUNT(*)::int FROM "comments" WHERE "comments"."postId" = ${cols.id})`,
+    { type: 'integer' },
+  )
+  commentsCount!: Opt<number>;
+
+  // Set by PostsService for the user making the request, so null without one.
+  @Property({ type: 'datetime', persist: false })
+  myLikeAt?: Date | null;
+
+  // When the user last commented. Also set by PostsService.
+  @Property({ type: 'datetime', persist: false })
+  myLastCommentAt?: Date | null;
+
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
   })
-  myLikeAt: Date | null;
+  createdAt: Opt<Date> = new Date();
 
-  @VirtualColumn({
-    type: 'int',
-    query: (alias) =>
-      `SELECT COUNT(*)::int FROM "comments" WHERE "comments"."postId" = ${alias}."id"`,
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+    onUpdate: () => new Date(),
   })
-  commentsCount: number;
-
-  // When the user last commented. Also only loaded by queryForUser.
-  @VirtualColumn({
-    type: 'timestamptz',
-    select: false,
-    query: (alias) =>
-      `SELECT MAX("comments"."createdAt") FROM "comments" WHERE "comments"."postId" = ${alias}."id" AND "comments"."authorId" = :myLastCommentUserId`,
-  })
-  myLastCommentAt: Date | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt: Date;
+  updatedAt: Opt<Date> = new Date();
 }

@@ -1,5 +1,5 @@
+import { EntityManager } from '@mikro-orm/postgresql';
 import { NestFactory } from '@nestjs/core';
-import { DataSource } from 'typeorm';
 import { AppModule } from '../app.module';
 import { ADMIN_ROLE } from '../roles/permission-names';
 import { Role } from '../roles/role.entity';
@@ -16,22 +16,18 @@ async function makeAdmin(email: string | undefined) {
   });
 
   try {
-    const manager = app.get(DataSource).manager;
-    const user = await manager.findOneBy(User, {
-      email: email.trim().toLowerCase(),
-    });
+    const em = app.get(EntityManager).fork();
+    const user = await em.findOne(
+      User,
+      { email: email.trim().toLowerCase() },
+      { populate: ['roles'] },
+    );
     if (!user) {
       throw new Error(`No user with email ${email}`);
     }
 
-    const role = await manager.findOneByOrFail(Role, { name: ADMIN_ROLE });
-    await manager
-      .createQueryBuilder()
-      .insert()
-      .into('user_roles')
-      .values({ userId: user.id, roleId: role.id })
-      .orIgnore()
-      .execute();
+    user.roles.add(await em.findOneOrFail(Role, { name: ADMIN_ROLE }));
+    await em.flush();
 
     console.log(`${user.email} is now an admin`);
   } finally {

@@ -1,4 +1,3 @@
-import { SelectQueryBuilder } from 'typeorm';
 import { CursorPaginationQueryDto } from './dto/cursor-pagination-query.dto';
 
 export interface CursorPaginated<T> {
@@ -7,20 +6,21 @@ export interface CursorPaginated<T> {
   nextCursor: string | null;
 }
 
+export interface CursorPage {
+  // Only ids below this one, when set.
+  before?: string;
+  limit: number;
+}
+
 // Pages newest first by id, which is a UUID v7 and so sorts by time. Unlike an
 // offset, records added or deleted between requests cannot shift the next page.
+// find has to order by id descending and apply the page.
 export async function cursorPaginate<T extends { id: string }>(
-  query: SelectQueryBuilder<T>,
+  find: (page: CursorPage) => Promise<T[]>,
   { after, limit }: CursorPaginationQueryDto,
 ): Promise<CursorPaginated<T>> {
-  if (after) {
-    query.andWhere(`${query.alias}.id < :after`, { after });
-  }
   // One extra row shows if there is a next page, without counting them all.
-  const rows = await query
-    .orderBy(`${query.alias}.id`, 'DESC')
-    .limit(limit + 1)
-    .getMany();
+  const rows = await find({ before: after, limit: limit + 1 });
   const data = rows.slice(0, limit);
 
   return {

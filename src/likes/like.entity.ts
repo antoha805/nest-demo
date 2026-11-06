@@ -1,10 +1,11 @@
+import { type Opt, PrimaryKeyProp } from '@mikro-orm/core';
 import {
-  CreateDateColumn,
   Entity,
-  JoinColumn,
+  Enum,
   ManyToOne,
-  PrimaryColumn,
-} from 'typeorm';
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/decorators/legacy';
 import { User } from '../users/user.entity';
 
 export enum LikeableType {
@@ -14,22 +15,34 @@ export enum LikeableType {
 
 // likeableId cannot have a foreign key, as it points to one of several tables.
 // Instead, triggers on those tables delete the likes along with the record.
-@Entity('likes')
+@Entity({ tableName: 'likes' })
 export class Like {
+  [PrimaryKeyProp]?: ['likeableType', 'likeableId', 'userId'];
+
   // The key starts with the target, so it also serves the likesCount subqueries.
-  @PrimaryColumn({ type: 'enum', enum: LikeableType })
-  likeableType: LikeableType;
+  @Enum({
+    items: () => LikeableType,
+    nativeEnumName: 'likes_likeabletype_enum',
+    primary: true,
+  })
+  likeableType!: LikeableType;
 
-  @PrimaryColumn({ type: 'uuid' })
-  likeableId: string;
+  @PrimaryKey({ type: 'uuid' })
+  likeableId!: string;
 
-  @PrimaryColumn({ type: 'uuid' })
-  userId: string;
+  @ManyToOne(() => User, {
+    fieldName: 'userId',
+    mapToPk: true,
+    primary: true,
+    deleteRule: 'cascade',
+    updateRule: 'no action',
+  })
+  userId!: string;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'userId' })
-  user: User;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt: Date;
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    defaultRaw: 'now()',
+  })
+  createdAt: Opt<Date> = new Date();
 }

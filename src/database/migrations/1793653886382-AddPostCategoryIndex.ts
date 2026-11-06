@@ -1,17 +1,15 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { Migration } from '@mikro-orm/migrations';
 
-export class AddPostCategoryIndex1793653886382 implements MigrationInterface {
-  name = 'AddPostCategoryIndex1793653886382';
+export class AddPostCategoryIndex1793653886382 extends Migration {
+  override name = 'AddPostCategoryIndex1793653886382';
 
-  public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
+  override up(): void {
+    this.addSql(
       `CREATE INDEX "IDX_168bf21b341e2ae340748e2541" ON "posts" ("categoryId") `,
     );
   }
 
-  public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP INDEX "public"."IDX_168bf21b341e2ae340748e2541"`,
-    );
+  override down(): void {
+    this.addSql(`DROP INDEX "public"."IDX_168bf21b341e2ae340748e2541"`);
   }
 }

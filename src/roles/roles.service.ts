@@ -1,11 +1,10 @@
+import { EntityManager } from '@mikro-orm/postgresql';
 import {
   BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { ADMIN_ROLE, MEMBER_ROLE } from './permission-names';
@@ -14,34 +13,27 @@ import { Role } from './role.entity';
 
 @Injectable()
 export class RolesService {
-  constructor(
-    @InjectRepository(Role)
-    private readonly rolesRepository: Repository<Role>,
-    @InjectRepository(Permission)
-    private readonly permissionsRepository: Repository<Permission>,
-  ) {}
+  constructor(private readonly em: EntityManager) {}
 
   async create({ name, permissions }: CreateRoleDto): Promise<Role> {
-    return this.rolesRepository.save(
-      this.rolesRepository.create({
-        name,
-        permissions: await this.findPermissionsByNames(permissions),
-      }),
-    );
+    const role = this.em.create(Role, {
+      name,
+      permissions: await this.findPermissionsByNames(permissions),
+    });
+    await this.em.flush();
+    return role;
   }
 
   findAll(): Promise<Role[]> {
-    return this.rolesRepository.find({
-      relations: { permissions: true },
-      order: { name: 'ASC' },
-    });
+    return this.em.find(
+      Role,
+      {},
+      { populate: ['permissions'], orderBy: { name: 'asc' } },
+    );
   }
 
   findOne(id: string): Promise<Role> {
-    return this.rolesRepository.findOneOrFail({
-      where: { id },
-      relations: { permissions: true },
-    });
+    return this.em.findOneOrFail(Role, id, { populate: ['permissions'] });
   }
 
   async update(
@@ -57,13 +49,14 @@ export class RolesService {
       role.name = name;
     }
     if (permissions !== undefined) {
-      role.permissions = await this.findPermissionsByNames(permissions);
+      role.permissions.set(await this.findPermissionsByNames(permissions));
     }
-    return this.rolesRepository.save(role);
+    await this.em.flush();
+    return role;
   }
 
   async remove(id: string): Promise<void> {
-    const role = await this.rolesRepository.findOneBy({ id });
+    const role = await this.em.findOne(Role, id);
     if (!role) {
       throw new NotFoundException(`Role ${id} not found`);
     }
@@ -72,19 +65,19 @@ export class RolesService {
     if (role.name === MEMBER_ROLE) {
       throw new ConflictException('The member role cannot be deleted');
     }
-    await this.rolesRepository.delete(id);
+    await this.em.nativeDelete(Role, { id });
   }
 
   findAllPermissions(): Promise<Permission[]> {
-    return this.permissionsRepository.find({ order: { name: 'ASC' } });
+    return this.em.find(Permission, {}, { orderBy: { name: 'asc' } });
   }
 
   findPermissionsByNames(names: string[]): Promise<Permission[]> {
-    return this.permissionsRepository.findBy({ name: In(names) });
+    return this.em.find(Permission, { name: { $in: names } });
   }
 
   async findRolesByNames(names: string[]): Promise<Role[]> {
-    const roles = await this.rolesRepository.findBy({ name: In(names) });
+    const roles = await this.em.find(Role, { name: { $in: names } });
     if (roles.length !== names.length) {
       const found = new Set(roles.map((role) => role.name));
       const unknown = names.filter((name) => !found.has(name));

@@ -1,16 +1,18 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_PIPE } from '@nestjs/core';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { MikroOrmModule } from '@mikro-orm/nestjs';
+import { PostgreSqlDriver } from '@mikro-orm/postgresql';
 import { randomUUID } from 'node:crypto';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
 import { CommentsModule } from './comments/comments.module';
-import { EntityNotFoundFilter } from './common/filters/entity-not-found.filter';
-import { QueryFailedFilter } from './common/filters/query-failed.filter';
+import { DriverExceptionFilter } from './common/filters/driver-exception.filter';
+import { NotFoundErrorFilter } from './common/filters/not-found-error.filter';
 import { EnvironmentVariables, validate } from './config/env.validation';
 import { buildLogTransport } from './config/log-transports';
+import { createOrmConfig } from './database/mikro-orm.config';
 import { PostsModule } from './posts/posts.module';
 
 @Module({
@@ -30,17 +32,17 @@ import { PostsModule } from './posts/posts.module';
         },
       }),
     }),
-    TypeOrmModule.forRootAsync({
+    MikroOrmModule.forRootAsync({
+      driver: PostgreSqlDriver,
       inject: [ConfigService],
-      useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
-        type: 'postgres',
-        host: config.get('DB_HOST', { infer: true }),
-        port: config.get('DB_PORT', { infer: true }),
-        username: config.get('DB_USERNAME', { infer: true }),
-        password: config.get('DB_PASSWORD', { infer: true }),
-        database: config.get('DB_NAME', { infer: true }),
-        autoLoadEntities: true,
-      }),
+      useFactory: (config: ConfigService<EnvironmentVariables, true>) =>
+        createOrmConfig({
+          DB_HOST: config.get('DB_HOST', { infer: true }),
+          DB_PORT: config.get('DB_PORT', { infer: true }),
+          DB_USERNAME: config.get('DB_USERNAME', { infer: true }),
+          DB_PASSWORD: config.get('DB_PASSWORD', { infer: true }),
+          DB_NAME: config.get('DB_NAME', { infer: true }),
+        }),
     }),
     AuthModule,
     CategoriesModule,
@@ -56,8 +58,8 @@ import { PostsModule } from './posts/posts.module';
         transform: true,
       }),
     },
-    { provide: APP_FILTER, useClass: QueryFailedFilter },
-    { provide: APP_FILTER, useClass: EntityNotFoundFilter },
+    { provide: APP_FILTER, useClass: DriverExceptionFilter },
+    { provide: APP_FILTER, useClass: NotFoundErrorFilter },
   ],
 })
 export class AppModule {}

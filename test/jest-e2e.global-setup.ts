@@ -1,31 +1,40 @@
-// Must stay first: data-source reads DB_NAME when it is imported.
+// Must stay first: it sets DB_NAME before .env is read.
 import './jest-e2e.setup';
-import { DataSource, DataSourceOptions } from 'typeorm';
-import dataSource from './../src/database/data-source';
+import { existsSync } from 'node:fs';
+import { MikroORM } from '@mikro-orm/postgresql';
+import 'reflect-metadata';
+import { validate } from './../src/config/env.validation';
+import { migrate } from './../src/database/migrate';
+import { createOrmConfig } from './../src/database/mikro-orm.config';
 import { syncPermissions } from './../src/database/sync-permissions';
 
 export default async function globalSetup() {
-  const admin = new DataSource({
-    ...dataSource.options,
-    database: 'postgres',
-    entities: [],
-    migrations: [],
-  } as DataSourceOptions);
-  const database = `"${String(dataSource.options.database)}"`;
+  // Does not override the variables jest-e2e.setup has set.
+  if (existsSync('.env')) {
+    process.loadEnvFile();
+  }
+  const config = createOrmConfig(validate(process.env));
+  const database = `"${config.dbName}"`;
 
-  await admin.initialize();
+  const admin = await MikroORM.init({ ...config, dbName: 'postgres' });
   try {
-    await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`);
-    await admin.query(`CREATE DATABASE ${database}`);
+    const connection = admin.em.getConnection();
+    await connection.execute(
+      `DROP DATABASE IF EXISTS ${database} WITH (FORCE)`,
+    );
+    await connection.execute(`CREATE DATABASE ${database}`);
   } finally {
-    await admin.destroy();
+    await admin.close();
   }
 
-  await dataSource.initialize();
+  const orm = await MikroORM.init({
+    ...config,
+    migrations: { ...config.migrations, silent: true },
+  });
   try {
-    await dataSource.runMigrations();
-    await dataSource.transaction(syncPermissions);
+    await migrate(orm, 'up');
+    await orm.em.fork().transactional(syncPermissions);
   } finally {
-    await dataSource.destroy();
+    await orm.close();
   }
 }
