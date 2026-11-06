@@ -36,7 +36,7 @@ export class MailMessage {
     return this;
   }
 
-  // A button. A relative url is resolved against APP_URL.
+  // A button. A relative url is added to APP_URL, keeping its path.
   action(text: string, url: string): this {
     this.parts.push({ kind: 'action', text, url });
     return this;
@@ -89,9 +89,13 @@ export class MailMessage {
   }
 }
 
-// Only web links, so a button cannot run a script, such as with javascript:.
+// A relative url is added to APP_URL, keeping its path, so /posts/1 under
+// https://example.com/api is https://example.com/api/posts/1. Only web links,
+// so a button cannot run a script, such as with javascript:.
 function resolveUrl(url: string, appUrl: string): string {
-  const resolved = new URL(url, appUrl);
+  const resolved = URL.canParse(url)
+    ? new URL(url)
+    : new URL(url.replace(/^\/+/, ''), appUrl.replace(/\/*$/, '/'));
   if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
     throw new Error(`A mail button cannot link to ${resolved.protocol}`);
   }

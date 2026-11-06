@@ -70,6 +70,26 @@ describe('MailMessage', () => {
     expect(mail.text).toContain('Go: https://other.example/x');
   });
 
+  it.each([
+    ['https://example.com/api', '/posts/1'],
+    ['https://example.com/api/', '/posts/1'],
+    ['https://example.com/api', 'posts/1'],
+    ['https://example.com/api//', '//posts/1'],
+  ])('keeps the path of APP_URL=%j for %j', (base, url) => {
+    const mail = new MailMessage().subject('S').action('Go', url).render(base);
+
+    expect(mail.text).toBe('Hello!\n\nGo: https://example.com/api/posts/1');
+  });
+
+  it('links to the root of an APP_URL without a path', () => {
+    const mail = new MailMessage()
+      .subject('S')
+      .action('Go', '/posts/1')
+      .render('https://example.com');
+
+    expect(mail.text).toContain('Go: https://example.com/posts/1');
+  });
+
   it.each(['javascript:alert(1)', 'data:text/html,hi', 'mailto:a@example.com'])(
     'rejects a button linking to %s',
     (url) => {

@@ -75,7 +75,7 @@ export class EnvironmentVariables {
   @Min(1)
   JWT_EXPIRES_IN: number = 3600;
 
-  // Where links in mails point, such as the frontend.
+  // The app's own URL, like Laravel's, which links in mails start with.
   @IsUrl({
     protocols: ['http', 'https'],
     require_protocol: true,

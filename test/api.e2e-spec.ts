@@ -1587,7 +1587,7 @@ describe('API (e2e)', () => {
                 `Hi ${author.nickname}!`,
                 `${commenter} commented on your post "${title}":`,
                 excerpt,
-                `View the post: http://app.test/posts/${postId}`,
+                `View the post: http://app.test/api/posts/${postId}`,
               ].join('\n\n'),
             });
             expect(excerpt).toHaveLength(200);

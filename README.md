@@ -103,23 +103,23 @@ A failed deploy does not show up in GitHub. To see what the instance did, run `j
 
 Settings are read from environment variables and `.env`; see `.env.example`. Real environment variables take precedence over `.env`.
 
-| Variable         | Required             | Description                                                                        |
-| ---------------- | -------------------- | ---------------------------------------------------------------------------------- |
-| `PORT`           | No                   | API port (default `3000`)                                                          |
-| `LOG_LEVEL`      | No                   | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` (default `info`)    |
-| `LOG_TRANSPORTS` | No                   | Comma-separated log destinations, see below (default `stdout`)                     |
-| `DB_HOST`        | Yes                  | Postgres host                                                                      |
-| `DB_PORT`        | Yes                  | Postgres port                                                                      |
-| `DB_USERNAME`    | Yes                  | Postgres user                                                                      |
-| `DB_PASSWORD`    | Yes                  | Postgres password                                                                  |
-| `DB_NAME`        | Yes                  | Postgres database                                                                  |
-| `JWT_SECRET`     | Yes                  | Key that signs access tokens, at least 32 characters                               |
-| `JWT_EXPIRES_IN` | No                   | Access token lifetime in seconds (default `3600`)                                  |
-| `APP_URL`        | No                   | Where links in mails point, such as the frontend (default `http://localhost:3000`) |
-| `MAIL_MAILER`    | No                   | How mails are sent: `smtp`, `ses` or `log`. Unset or empty turns mail off          |
-| `MAIL_URL`       | With `smtp`          | SMTP server, such as `smtps://user:password@smtp.example.com:465`                  |
-| `MAIL_FROM`      | With `smtp` or `ses` | Sender of mails, such as `nest-demo <noreply@example.com>`                         |
-| `AWS_REGION`     | With `ses`           | SES region, such as `eu-central-1`                                                 |
+| Variable         | Required             | Description                                                                          |
+| ---------------- | -------------------- | ------------------------------------------------------------------------------------ |
+| `PORT`           | No                   | API port (default `3000`)                                                            |
+| `LOG_LEVEL`      | No                   | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` (default `info`)      |
+| `LOG_TRANSPORTS` | No                   | Comma-separated log destinations, see below (default `stdout`)                       |
+| `DB_HOST`        | Yes                  | Postgres host                                                                        |
+| `DB_PORT`        | Yes                  | Postgres port                                                                        |
+| `DB_USERNAME`    | Yes                  | Postgres user                                                                        |
+| `DB_PASSWORD`    | Yes                  | Postgres password                                                                    |
+| `DB_NAME`        | Yes                  | Postgres database                                                                    |
+| `JWT_SECRET`     | Yes                  | Key that signs access tokens, at least 32 characters                                 |
+| `JWT_EXPIRES_IN` | No                   | Access token lifetime in seconds (default `3600`)                                    |
+| `APP_URL`        | No                   | The app's own URL, which links in mails start with (default `http://localhost:3000`) |
+| `MAIL_MAILER`    | No                   | How mails are sent: `smtp`, `ses` or `log`. Unset or empty turns mail off            |
+| `MAIL_URL`       | With `smtp`          | SMTP server, such as `smtps://user:password@smtp.example.com:465`                    |
+| `MAIL_FROM`      | With `smtp` or `ses` | Sender of mails, such as `nest-demo <noreply@example.com>`                           |
+| `AWS_REGION`     | With `ses`           | SES region, such as `eu-central-1`                                                   |
 
 They are validated at startup, and the app exits with an error listing any missing or invalid values.
 
@@ -224,7 +224,7 @@ The channels run in that order and all use the same id, so a broadcast always na
 
 Sent so far, each to the author when someone else acts, and never for the user's own actions:
 
-- `post.commented`: someone commented on their post. Also mailed, with the comment cut to 200 characters and a link to `APP_URL/posts/:id`.
+- `post.commented`: someone commented on their post. Also mailed, with the comment cut to 200 characters and a link to the post, `APP_URL/api/posts/:id`.
 - `post.liked`: someone liked their post.
 - `comment.liked`: someone liked their comment.
 
@@ -268,7 +268,7 @@ toMail(user: MailRecipient) {
 }
 ```
 
-It renders as plain text and HTML, with the lines and buttons in the order they were added, and the content escaped in the HTML. Button links are resolved against `APP_URL`, and only `http` and `https` links are allowed. Each user gets their own mail, so one that fails is logged and does not stop the others. Users deleted in the meantime are skipped.
+It renders as plain text and HTML, with the lines and buttons in the order they were added, and the content escaped in the HTML. Relative button links are added to `APP_URL`, keeping its path, so `/posts/1` with `APP_URL=https://example.com/api` links to `https://example.com/api/posts/1`. Only `http` and `https` links are allowed. Each user gets their own mail, so one that fails is logged and does not stop the others. Users deleted in the meantime are skipped.
 
 `MAIL_MAILER` picks how mails are sent, like Laravel's:
 

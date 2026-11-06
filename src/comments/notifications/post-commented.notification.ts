@@ -49,7 +49,7 @@ export class PostCommentedNotification extends Notification<PostCommentedData> {
         `${this.commenter.nickname} commented on your post "${this.post.title}":`,
       )
       .line(excerpt(this.comment.content))
-      .action('View the post', `/posts/${this.post.id}`);
+      .action('View the post', `/api/posts/${this.post.id}`);
   }
 }
 
