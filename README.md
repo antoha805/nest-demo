@@ -103,21 +103,22 @@ A failed deploy does not show up in GitHub. To see what the instance did, run `j
 
 Settings are read from environment variables and `.env`; see `.env.example`. Real environment variables take precedence over `.env`.
 
-| Variable         | Required        | Description                                                                                               |
-| ---------------- | --------------- | --------------------------------------------------------------------------------------------------------- |
-| `PORT`           | No              | API port (default `3000`)                                                                                 |
-| `LOG_LEVEL`      | No              | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` (default `info`)                           |
-| `LOG_TRANSPORTS` | No              | Comma-separated log destinations, see below (default `stdout`)                                            |
-| `DB_HOST`        | Yes             | Postgres host                                                                                             |
-| `DB_PORT`        | Yes             | Postgres port                                                                                             |
-| `DB_USERNAME`    | Yes             | Postgres user                                                                                             |
-| `DB_PASSWORD`    | Yes             | Postgres password                                                                                         |
-| `DB_NAME`        | Yes             | Postgres database                                                                                         |
-| `JWT_SECRET`     | Yes             | Key that signs access tokens, at least 32 characters                                                      |
-| `JWT_EXPIRES_IN` | No              | Access token lifetime in seconds (default `3600`)                                                         |
-| `APP_URL`        | No              | Where links in mails point, such as the frontend (default `http://localhost:3000`)                        |
-| `MAIL_URL`       | No              | SMTP server for mails, such as `smtps://user:password@smtp.example.com:465`. Without it, mails are logged |
-| `MAIL_FROM`      | With `MAIL_URL` | Sender of mails, such as `nest-demo <noreply@example.com>`                                                |
+| Variable         | Required    | Description                                                                        |
+| ---------------- | ----------- | ---------------------------------------------------------------------------------- |
+| `PORT`           | No          | API port (default `3000`)                                                          |
+| `LOG_LEVEL`      | No          | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` (default `info`)    |
+| `LOG_TRANSPORTS` | No          | Comma-separated log destinations, see below (default `stdout`)                     |
+| `DB_HOST`        | Yes         | Postgres host                                                                      |
+| `DB_PORT`        | Yes         | Postgres port                                                                      |
+| `DB_USERNAME`    | Yes         | Postgres user                                                                      |
+| `DB_PASSWORD`    | Yes         | Postgres password                                                                  |
+| `DB_NAME`        | Yes         | Postgres database                                                                  |
+| `JWT_SECRET`     | Yes         | Key that signs access tokens, at least 32 characters                               |
+| `JWT_EXPIRES_IN` | No          | Access token lifetime in seconds (default `3600`)                                  |
+| `APP_URL`        | No          | Where links in mails point, such as the frontend (default `http://localhost:3000`) |
+| `MAIL_MAILER`    | No          | How mails are sent: `smtp` or `log`. Unset or empty turns mail off                 |
+| `MAIL_URL`       | With `smtp` | SMTP server, such as `smtps://user:password@smtp.example.com:465`                  |
+| `MAIL_FROM`      | With `smtp` | Sender of mails, such as `nest-demo <noreply@example.com>`                         |
 
 They are validated at startup, and the app exits with an error listing any missing or invalid values.
 
@@ -216,7 +217,7 @@ Modeled on Laravel's notifications. Each kind is a subclass of `Notification` (`
 
 - `database` stores it in the `notifications` table, for the list and unread count.
 - `broadcast` sends it to the user's open streams.
-- `mail` mails it to the user's email. Not in `via()` by default, as the notification needs a `toMail()`.
+- `mail` mails it to the user's email. Not in `via()` by default, as the notification needs a `toMail()`. Left out while mail is off, so notifications that list it are still sent through the others.
 
 The channels run in that order and all use the same id, so a broadcast always names a stored notification, and mail, the slowest, holds up neither. Sending happens in the request, with no queue, after the change it is about has been saved. A failing channel is logged, stops the channels after it, and does not fail the request.
 
@@ -268,7 +269,13 @@ toMail(user: MailRecipient) {
 
 It renders as plain text and HTML, with the lines and buttons in the order they were added, and the content escaped in the HTML. Button links are resolved against `APP_URL`, and only `http` and `https` links are allowed. Each user gets their own mail, so one that fails is logged and does not stop the others. Users deleted in the meantime are skipped.
 
-Mails are sent through the SMTP server of `MAIL_URL`. Without it, as in development, they are written to the log instead, including the address and text. As mails are sent within the request, a slow SMTP server slows down the request that sent the notification; a queue would fix that once it matters.
+`MAIL_MAILER` picks how mails are sent, like Laravel's:
+
+- `smtp` sends them through the SMTP server of `MAIL_URL`, from `MAIL_FROM`.
+- `log` writes them to the log instead, including the address and text, as in development.
+- Unset or empty turns mail off: the mail channel is left out, and the app logs so at startup.
+
+As mails are sent within the request, a slow SMTP server slows down the request that sent the notification; a queue would fix that once it matters.
 
 ## Pagination
 

@@ -72,37 +72,53 @@ describe('validate', () => {
     },
   );
 
-  it('needs no mail settings, as mails are then logged', () => {
-    expect(validate(env)).toMatchObject({
-      MAIL_URL: undefined,
-      MAIL_FROM: undefined,
-    });
+  it.each([undefined, ''])(
+    'turns mail off for MAIL_MAILER=%j',
+    (MAIL_MAILER) => {
+      expect(validate({ ...env, MAIL_MAILER }).MAIL_MAILER).toBeUndefined();
+    },
+  );
+
+  it('needs no other mail settings for the log mailer', () => {
+    expect(validate({ ...env, MAIL_MAILER: 'log' }).MAIL_MAILER).toBe('log');
   });
 
-  it('accepts SMTP settings', () => {
-    const result = validate({
+  it.each(['sendmail', 'SMTP'])('rejects MAIL_MAILER=%j', (MAIL_MAILER) => {
+    expect(() => validate({ ...env, MAIL_MAILER })).toThrow(/MAIL_MAILER/);
+  });
+
+  describe('with the smtp mailer', () => {
+    const smtp = {
       ...env,
+      MAIL_MAILER: 'smtp',
       MAIL_URL: 'smtps://user:pass@smtp.example.com:465',
       MAIL_FROM: 'nest-demo <noreply@example.com>',
+    };
+
+    it('accepts the SMTP settings', () => {
+      expect(validate(smtp)).toMatchObject({
+        MAIL_URL: smtp.MAIL_URL,
+        MAIL_FROM: smtp.MAIL_FROM,
+      });
     });
 
-    expect(result.MAIL_URL).toBe('smtps://user:pass@smtp.example.com:465');
+    it.each(['MAIL_URL', 'MAIL_FROM'])('requires %s', (name) => {
+      expect(() => validate({ ...smtp, [name]: undefined })).toThrow(
+        new RegExp(name),
+      );
+    });
+
+    it('rejects a MAIL_URL that is not SMTP, without showing it', () => {
+      const MAIL_URL = 'https://user:s3cret@example.com';
+
+      expect(() => validate({ ...smtp, MAIL_URL })).toThrow(/MAIL_URL/);
+      expect(() => validate({ ...smtp, MAIL_URL })).not.toThrow(/s3cret/);
+    });
   });
 
-  it('requires MAIL_FROM with MAIL_URL', () => {
+  it('ignores the SMTP settings for other mailers', () => {
     expect(() =>
-      validate({ ...env, MAIL_URL: 'smtp://localhost:1025' }),
-    ).toThrow(/MAIL_FROM/);
-  });
-
-  it('rejects a MAIL_URL that is not SMTP, without showing it', () => {
-    const MAIL_URL = 'https://user:s3cret@example.com';
-
-    expect(() => validate({ ...env, MAIL_URL, MAIL_FROM: 'a' })).toThrow(
-      /MAIL_URL/,
-    );
-    expect(() => validate({ ...env, MAIL_URL, MAIL_FROM: 'a' })).not.toThrow(
-      /s3cret/,
-    );
+      validate({ ...env, MAIL_MAILER: 'log', MAIL_URL: 'not a url' }),
+    ).not.toThrow();
   });
 });

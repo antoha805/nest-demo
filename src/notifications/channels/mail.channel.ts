@@ -24,6 +24,11 @@ export class MailChannel implements NotificationChannel {
     this.appUrl = config.get('APP_URL', { infer: true });
   }
 
+  // Off without MAIL_MAILER.
+  get enabled(): boolean {
+    return this.mailer.enabled;
+  }
+
   async send(deliveries: NotificationDelivery[]): Promise<void> {
     const recipients = await this.findRecipients(
       deliveries.map(({ userId }) => userId),

@@ -17,6 +17,12 @@ import {
 } from 'class-validator';
 import { LOG_TRANSPORTS, LogTransport } from './log-transports';
 
+// smtp sends through MAIL_URL, and log writes mails to the log, as in
+// development.
+export const MAIL_MAILERS = ['smtp', 'log'] as const;
+
+export type MailMailer = (typeof MAIL_MAILERS)[number];
+
 export class EnvironmentVariables {
   @Type(() => Number)
   @IsInt()
@@ -77,15 +83,23 @@ export class EnvironmentVariables {
   })
   APP_URL: string = 'http://localhost:3000';
 
-  // Mails are logged rather than sent without it. Holds the password, so its
-  // error does not show it.
+  // How mails are sent, like Laravel's. Unset or empty turns mail off, and
+  // notifications leave out the mail channel.
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' ? undefined : value,
+  )
   @IsOptional()
+  @IsIn(MAIL_MAILERS)
+  MAIL_MAILER?: MailMailer;
+
+  // Holds the password, so its error does not show it.
+  @ValidateIf((env: EnvironmentVariables) => env.MAIL_MAILER === 'smtp')
   @Matches(/^smtps?:\/\/\S+$/, {
     message: 'MAIL_URL must be an smtp:// or smtps:// URL',
   })
   MAIL_URL?: string;
 
-  @ValidateIf((env: EnvironmentVariables) => Boolean(env.MAIL_URL))
+  @ValidateIf((env: EnvironmentVariables) => env.MAIL_MAILER === 'smtp')
   @IsString()
   @IsNotEmpty()
   MAIL_FROM?: string;

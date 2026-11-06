@@ -29,6 +29,8 @@ export class NotificationsService {
 
   // In the order they run: a broadcast names the stored notification, so the
   // database comes first, and mail is slowest, so it does not hold up the rest.
+  // Mail is left out while it is off, so notifications that list it are still
+  // sent through the others.
   private readonly channels: [NotificationChannelName, NotificationChannel][];
 
   constructor(
@@ -41,8 +43,10 @@ export class NotificationsService {
     this.channels = [
       ['database', databaseChannel],
       ['broadcast', broadcastChannel],
-      ['mail', mailChannel],
     ];
+    if (mailChannel.enabled) {
+      this.channels.push(['mail', mailChannel]);
+    }
   }
 
   // Sent after the change it is about has been saved, so a failure is logged
