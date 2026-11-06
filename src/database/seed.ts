@@ -130,7 +130,8 @@ async function seed() {
         let createdUsers = 0;
         for (const email of [ANA, BEN, CLEO]) {
           if (!(await em.count(User, { email }))) {
-            await em.insert(User, { email, passwordHash });
+            const nickname = email.split('@')[0].replace('-', '_');
+            await em.insert(User, { email, nickname, passwordHash });
             createdUsers++;
           }
         }
@@ -165,7 +166,7 @@ async function seed() {
         for (const { post, author, content, likedBy } of comments) {
           const comment = {
             postId: await postId(post),
-            authorId: userId(author),
+            author: userId(author),
             content,
           };
           let id = (await em.findOne(Comment, comment))?.id;

@@ -6,6 +6,7 @@ import { AddPostCategoryIndex1793653886382 } from './1793653886382-AddPostCatego
 import { AddCommentsCursorIndex1793654328377 } from './1793654328377-AddCommentsCursorIndex';
 import { Migration20261106120000_AdoptMikroOrmNames } from './Migration20261106120000_AdoptMikroOrmNames';
 import { Migration20261106130000_DropTypeOrmMigrations } from './Migration20261106130000_DropTypeOrmMigrations';
+import { Migration20261106140000_AddUserNickname } from './Migration20261106140000_AddUserNickname';
 
 // Run in this order. `npm run migration:create` writes new ones, which then have
 // to be added at the end.
@@ -18,4 +19,5 @@ export const migrations = [
   AddCommentsCursorIndex1793654328377,
   Migration20261106120000_AdoptMikroOrmNames,
   Migration20261106130000_DropTypeOrmMigrations,
+  Migration20261106140000_AddUserNickname,
 ];

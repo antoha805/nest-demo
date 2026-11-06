@@ -13,9 +13,13 @@ export class UsersService {
     private readonly rolesService: RolesService,
   ) {}
 
-  async create(email: string, passwordHash: string): Promise<User> {
+  async create(
+    email: string,
+    nickname: string,
+    passwordHash: string,
+  ): Promise<User> {
     const roles = await this.rolesService.findRolesByNames([MEMBER_ROLE]);
-    const user = this.em.create(User, { email, passwordHash, roles });
+    const user = this.em.create(User, { email, nickname, passwordHash, roles });
     await this.em.flush();
     return user;
   }

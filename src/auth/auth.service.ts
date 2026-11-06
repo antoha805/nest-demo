@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { CredentialsDto } from './dto/credentials.dto';
+import { RegisterDto } from './dto/register.dto';
 
 const BCRYPT_ROUNDS = 12;
 // Compared for unknown emails, so they take as long to reject as wrong passwords.
@@ -16,9 +17,9 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async register({ email, password }: CredentialsDto) {
+  async register({ email, password, nickname }: RegisterDto) {
     const passwordHash = await hash(password, BCRYPT_ROUNDS);
-    const user = await this.usersService.create(email, passwordHash);
+    const user = await this.usersService.create(email, nickname, passwordHash);
     return this.issueToken(user.id);
   }
 

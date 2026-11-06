@@ -16,6 +16,10 @@ export class User {
   @Property({ type: 'varchar', length: 254, unique: true })
   email!: string;
 
+  // Shown to other users, such as on comments, so the email can stay private.
+  @Property({ type: 'varchar', length: 30, unique: true })
+  nickname!: string;
+
   // Only loaded by UsersService.findCredentials, and never serialized.
   @Property({ type: 'varchar', length: 60, lazy: true, hidden: true })
   passwordHash!: string;

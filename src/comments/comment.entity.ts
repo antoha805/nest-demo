@@ -37,15 +37,22 @@ export class Comment {
   })
   postId!: string;
 
-  // Null after the author is deleted.
+  // Null after the author is deleted. CommentsService populates it, and only
+  // the nickname is shown, so the email stays private.
   @ManyToOne(() => User, {
     fieldName: 'authorId',
-    mapToPk: true,
     nullable: true,
     deleteRule: 'set null',
     updateRule: 'no action',
+    serializer: (author?: User | null) =>
+      author ? { id: author.id, nickname: author.nickname } : null,
   })
-  authorId: string | null = null;
+  author: User | null = null;
+
+  @Property({ type: 'uuid', persist: false })
+  get authorId(): Opt<string> | null {
+    return this.author?.id ?? null;
+  }
 
   @Formula(
     (cols) =>

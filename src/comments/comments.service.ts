@@ -29,7 +29,7 @@ export class CommentsService {
     const comment = this.em.create(Comment, {
       content: dto.content,
       postId,
-      authorId: user.id,
+      author: user.id,
     });
     await this.em.flush();
     return this.findOneForUser(comment.id, user.id);
@@ -55,7 +55,7 @@ export class CommentsService {
         this.em.find(
           Comment,
           { postId, ...(before ? { id: { $lt: before } } : {}) },
-          { orderBy: { id: 'desc' }, limit },
+          { populate: ['author'], orderBy: { id: 'desc' }, limit },
         ),
       query,
     );
@@ -111,7 +111,7 @@ export class CommentsService {
     const rows = await this.em
       .createQueryBuilder(Comment)
       .select(['postId', raw('MAX("createdAt") AS "lastAt"')])
-      .where({ authorId: userId, postId: { $in: postIds } })
+      .where({ author: userId, postId: { $in: postIds } })
       .groupBy('postId')
       .execute<{ postId: string; lastAt: Date }[]>('all', false);
     return new Map(rows.map((row) => [row.postId, row.lastAt]));
@@ -119,7 +119,10 @@ export class CommentsService {
 
   private async findOneForUser(id: string, userId: string): Promise<Comment> {
     // Refreshed, so the counts include changes made in this request.
-    const comment = await this.em.findOneOrFail(Comment, id, { refresh: true });
+    const comment = await this.em.findOneOrFail(Comment, id, {
+      populate: ['author'],
+      refresh: true,
+    });
     await this.setMyLikeAt([comment], userId);
     return comment;
   }

@@ -13,6 +13,7 @@ import type { AuthenticatedUser } from './authenticated-user';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { CredentialsDto } from './dto/credentials.dto';
+import { RegisterDto } from './dto/register.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -21,7 +22,7 @@ export class AuthController {
   @Public()
   @UseGuards(ThrottlerGuard)
   @Post('register')
-  register(@Body() dto: CredentialsDto) {
+  register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 

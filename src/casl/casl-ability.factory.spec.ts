@@ -2,6 +2,7 @@ import { AuthenticatedUser } from '../auth/authenticated-user';
 import { Comment } from '../comments/comment.entity';
 import { Post } from '../posts/post.entity';
 import { PERMISSIONS, PERMISSION_NAMES } from '../roles/permission-names';
+import { User } from '../users/user.entity';
 import { CaslAbilityFactory } from './casl-ability.factory';
 
 describe('CaslAbilityFactory', () => {
@@ -65,7 +66,9 @@ describe('CaslAbilityFactory', () => {
       PERMISSIONS.COMMENTS_DELETE_ALL,
     );
     const commentBy = (authorId: string | null) =>
-      Object.assign(new Comment(), { authorId });
+      Object.assign(new Comment(), {
+        author: authorId && Object.assign(new User(), { id: authorId }),
+      });
 
     expect(ability.can('update', commentBy('me'))).toBe(true);
     expect(ability.can('update', commentBy('other'))).toBe(false);

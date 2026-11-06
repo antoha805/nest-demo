@@ -33,6 +33,8 @@ describe('API (e2e)', () => {
   const withToken = (token: string) =>
     request.agent(app.getHttpServer()).set('Authorization', `Bearer ${token}`);
   const uniqueName = () => `e2e-${randomUUID()}`;
+  const uniqueNickname = () =>
+    `e2e_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
   const password = 'correct horse battery';
 
   // Each use gets its own identity map, like a request does.
@@ -41,10 +43,11 @@ describe('API (e2e)', () => {
   // Skips the controller, as tests create more users than its rate limit allows.
   const register = async () => {
     const email = `${uniqueName()}@example.com`;
+    const nickname = uniqueNickname();
     const { accessToken } = await RequestContext.create(em(), () =>
-      app.get(AuthService).register({ email, password }),
+      app.get(AuthService).register({ email, nickname, password }),
     );
-    return { email, token: accessToken };
+    return { email, nickname, token: accessToken };
   };
 
   const currentUser = async (token: string) => {
@@ -231,9 +234,10 @@ describe('API (e2e)', () => {
   describe('authentication', () => {
     it('registers and logs in with normalised emails', async () => {
       const email = `${uniqueName()}@example.com`;
+      const nickname = uniqueNickname();
       const registered = await anonymous()
         .post('/api/auth/register')
-        .send({ email, password })
+        .send({ email, nickname, password })
         .expect(201);
       const { accessToken: token } = registered.body as { accessToken: string };
 
@@ -261,8 +265,24 @@ describe('API (e2e)', () => {
 
       await anonymous()
         .post('/api/auth/register')
-        .send({ email, password })
+        .send({ email, nickname: uniqueNickname(), password })
         .expect(409);
+    });
+
+    it('requires a unique, valid nickname', async () => {
+      const { nickname } = await register();
+      const send = (body: object) =>
+        anonymous()
+          .post('/api/auth/register')
+          .send({ email: `${uniqueName()}@example.com`, password, ...body });
+
+      await send({}).expect(400);
+      await send({ nickname: 'ab' }).expect(400);
+      await send({ nickname: 'x'.repeat(31) }).expect(400);
+      await send({ nickname: 'has space' }).expect(400);
+      await send({ nickname }).expect(409);
+      // Lowercased, so a different case does not get around the uniqueness.
+      await send({ nickname: nickname.toUpperCase() }).expect(409);
     });
 
     it('rejects bad credentials the same way', async () => {
@@ -284,6 +304,7 @@ describe('API (e2e)', () => {
         .post('/api/auth/register')
         .send({
           email: `${uniqueName()}@example.com`,
+          nickname: uniqueNickname(),
           password: 'x'.repeat(73),
         })
         .expect(400);
@@ -1035,8 +1056,39 @@ describe('API (e2e)', () => {
           .get(`/api/posts/${post.id}/comments`)
           .expect(200);
         expect((listed.body as CursorPaginated<Comment>).data).toMatchObject([
-          { id: comment.id, authorId: null },
+          { id: comment.id, authorId: null, author: null },
         ]);
+      });
+
+      it('shows the nickname of the author, but not the email', async () => {
+        const { token, email, nickname } = await register();
+        const { id } = await currentUser(token);
+        const post = await createPost(adminToken, true);
+        const author = { id, nickname };
+
+        const created = await createComment(token, post.id);
+        expect(created.author).toEqual(author);
+
+        const edited = await withToken(token)
+          .patch(`/api/comments/${created.id}`)
+          .send({ content: 'Edited' })
+          .expect(200);
+        const listed = await anonymous()
+          .get(`/api/posts/${post.id}/comments`)
+          .expect(200);
+        const single = await anonymous()
+          .get(`/api/posts/${post.id}`)
+          .expect(200);
+        const bodies = [
+          edited.body as Comment,
+          (listed.body as CursorPaginated<Comment>).data[0],
+          (single.body as { comments: CursorPaginated<Comment> }).comments
+            .data[0],
+        ];
+        for (const comment of bodies) {
+          expect(comment.author).toEqual(author);
+        }
+        expect(JSON.stringify(bodies)).not.toContain(email);
       });
     });
 
