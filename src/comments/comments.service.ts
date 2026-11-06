@@ -9,9 +9,11 @@ import { LikeableType } from '../likes/like.entity';
 import { LikesService } from '../likes/likes.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PostVisibilityService } from '../posts/post-visibility.service';
+import { Post } from '../posts/post.entity';
 import { Comment } from './comment.entity';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
+import { CommentLikedNotification } from './notifications/comment-liked.notification';
 import { PostCommentedNotification } from './notifications/post-commented.notification';
 
 @Injectable()
@@ -75,9 +77,19 @@ export class CommentsService {
 
   // A comment is only as visible as its post, so drafts do not leak through it.
   async findVisible(id: string, user: AuthenticatedUser): Promise<Comment> {
+    return (await this.findVisibleWithPost(id, user)).comment;
+  }
+
+  private async findVisibleWithPost(
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<{ comment: Comment; post: Post }> {
     const comment = await this.em.findOneOrFail(Comment, id);
-    await this.postVisibilityService.findVisible(comment.postId, user);
-    return comment;
+    const post = await this.postVisibilityService.findVisible(
+      comment.postId,
+      user,
+    );
+    return { comment, post };
   }
 
   async update(
@@ -101,8 +113,20 @@ export class CommentsService {
   }
 
   async like(id: string, user: AuthenticatedUser): Promise<void> {
-    await this.findVisible(id, user);
-    await this.likesService.like(LikeableType.COMMENT, id, user.id);
+    const { comment, post } = await this.findVisibleWithPost(id, user);
+    const liked = await this.likesService.like(
+      LikeableType.COMMENT,
+      id,
+      user.id,
+    );
+    // Only for a new like, not their own comments, nor once the author has
+    // been deleted.
+    if (liked && comment.authorId && comment.authorId !== user.id) {
+      await this.notificationsService.send(
+        comment.authorId,
+        new CommentLikedNotification(comment, post, user),
+      );
+    }
   }
 
   async unlike(id: string, user: AuthenticatedUser): Promise<void> {

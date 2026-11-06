@@ -216,7 +216,13 @@ Modeled on Laravel's notifications. Each kind is a subclass of `Notification` (`
 
 The database channel runs first, and both use the same id, so a broadcast always names a stored notification. Sending happens in the request, with no queue, after the change it is about has been saved. A failing channel is logged, stops the channels after it, and does not fail the request.
 
-Sent so far: `post.commented`, to a post's author when someone else comments on it.
+Sent so far, each to the author when someone else acts, and never for the user's own actions:
+
+- `post.commented`: someone commented on their post.
+- `post.liked`: someone liked their post.
+- `comment.liked`: someone liked their comment.
+
+A like only notifies when it is new, so liking again does not. Unliking and liking again does, as it is a new like.
 
 `GET /api/notifications` pages with cursors, like comments. Marking read and unread responds with `204 No Content`; marking an already read notification keeps when it was first read. Another user's notification returns `404 Not Found`.
 

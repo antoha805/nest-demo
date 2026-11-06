@@ -1,3 +1,4 @@
+import type { QueryResult } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { Injectable } from '@nestjs/common';
 import { Like, LikeableType } from './like.entity';
@@ -7,17 +8,19 @@ import { Like, LikeableType } from './like.entity';
 export class LikesService {
   constructor(private readonly em: EntityManager) {}
 
+  // Whether the like is new, rather than there already.
   async like(
     likeableType: LikeableType,
     likeableId: string,
     userId: string,
-  ): Promise<void> {
-    await this.em
+  ): Promise<boolean> {
+    const { affectedRows } = await this.em
       .createQueryBuilder(Like)
       .insert({ likeableType, likeableId, userId })
       .onConflict()
       .ignore()
-      .execute();
+      .execute<QueryResult>('run');
+    return affectedRows > 0;
   }
 
   async unlike(

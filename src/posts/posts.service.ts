@@ -17,8 +17,10 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { paginate, Paginated } from '../common/paginated';
 import { LikeableType } from '../likes/like.entity';
 import { LikesService } from '../likes/likes.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
+import { PostLikedNotification } from './notifications/post-liked.notification';
 import { PostVisibilityService } from './post-visibility.service';
 import { Post } from './post.entity';
 
@@ -34,6 +36,7 @@ export class PostsService {
     private readonly postVisibilityService: PostVisibilityService,
     private readonly likesService: LikesService,
     private readonly commentsService: CommentsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(
@@ -132,8 +135,16 @@ export class PostsService {
   }
 
   async like(id: string, user: AuthenticatedUser): Promise<void> {
-    await this.postVisibilityService.findVisible(id, user);
-    await this.likesService.like(LikeableType.POST, id, user.id);
+    const post = await this.postVisibilityService.findVisible(id, user);
+    const liked = await this.likesService.like(LikeableType.POST, id, user.id);
+    // Only for a new like, not their own posts, nor once the author has been
+    // deleted.
+    if (liked && post.authorId && post.authorId !== user.id) {
+      await this.notificationsService.send(
+        post.authorId,
+        new PostLikedNotification(post, user),
+      );
+    }
   }
 
   async unlike(id: string, user: AuthenticatedUser): Promise<void> {

@@ -3,6 +3,7 @@ import { CaslModule } from '../casl/casl.module';
 import { CategoriesModule } from '../categories/categories.module';
 import { CommentsModule } from '../comments/comments.module';
 import { LikesModule } from '../likes/likes.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { PostVisibilityModule } from './post-visibility.module';
 import { PostsController } from './posts.controller';
 import { PostsService } from './posts.service';
@@ -13,6 +14,7 @@ import { PostsService } from './posts.service';
     CaslModule,
     LikesModule,
     CommentsModule,
+    NotificationsModule,
     PostVisibilityModule,
   ],
   controllers: [PostsController],

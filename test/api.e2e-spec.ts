@@ -1267,6 +1267,45 @@ describe('API (e2e)', () => {
           await anonymous().get('/api/notifications/unread-count').expect(401);
         });
 
+        it('notifies authors of new likes by others', async () => {
+          const author = await createAuthoredPost();
+          const { id: postId, title: postTitle } = author.post;
+          const comment = await createComment(author.token, postId);
+          const liker = await register();
+          const { id: likerId } = await currentUser(liker.token);
+          const postLike = `/api/posts/${postId}/like`;
+          const commentLike = `/api/comments/${comment.id}/like`;
+
+          await withToken(author.token).put(postLike).expect(204);
+          await withToken(author.token).put(commentLike).expect(204);
+          expect((await listNotifications(author.token)).data).toEqual([]);
+
+          await withToken(liker.token).put(postLike).expect(204);
+          await withToken(liker.token).put(commentLike).expect(204);
+          // Liking again changes nothing, so it does not notify again.
+          await withToken(liker.token).put(postLike).expect(204);
+          await withToken(liker.token).put(commentLike).expect(204);
+
+          const likerData = { id: likerId, nickname: liker.nickname };
+          const { data } = await listNotifications(author.token);
+          expect(data.map((n) => ({ type: n.type, data: n.data }))).toEqual([
+            {
+              type: 'comment.liked',
+              data: {
+                commentId: comment.id,
+                postId,
+                postTitle,
+                liker: likerData,
+              },
+            },
+            {
+              type: 'post.liked',
+              data: { postId, postTitle, liker: likerData },
+            },
+          ]);
+          expect(JSON.stringify(data)).not.toContain(liker.email);
+        });
+
         it('pages notifications newest first', async () => {
           const author = await createAuthoredPost();
           const comments: Comment[] = [];
