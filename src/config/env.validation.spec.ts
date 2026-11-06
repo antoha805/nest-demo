@@ -116,9 +116,49 @@ describe('validate', () => {
     });
   });
 
-  it('ignores the SMTP settings for other mailers', () => {
+  describe('with the ses mailer', () => {
+    const ses = {
+      ...env,
+      MAIL_MAILER: 'ses',
+      MAIL_FROM: 'nest-demo <noreply@example.com>',
+      AWS_REGION: 'eu-central-1',
+    };
+
+    it('accepts the SES settings, without MAIL_URL', () => {
+      expect(validate(ses)).toMatchObject({
+        MAIL_MAILER: 'ses',
+        AWS_REGION: 'eu-central-1',
+      });
+    });
+
+    it.each(['AWS_REGION', 'MAIL_FROM'])('requires %s', (name) => {
+      expect(() => validate({ ...ses, [name]: undefined })).toThrow(
+        new RegExp(name),
+      );
+    });
+
+    it.each(['eu-central', 'EU-CENTRAL-1', 'europe'])(
+      'rejects AWS_REGION=%j',
+      (AWS_REGION) => {
+        expect(() => validate({ ...ses, AWS_REGION })).toThrow(/AWS_REGION/);
+      },
+    );
+
+    it('accepts multi-part regions', () => {
+      expect(validate({ ...ses, AWS_REGION: 'us-gov-west-1' }).AWS_REGION).toBe(
+        'us-gov-west-1',
+      );
+    });
+  });
+
+  it('ignores the settings of other mailers', () => {
     expect(() =>
-      validate({ ...env, MAIL_MAILER: 'log', MAIL_URL: 'not a url' }),
+      validate({
+        ...env,
+        MAIL_MAILER: 'log',
+        MAIL_URL: 'not a url',
+        AWS_REGION: 'nowhere',
+      }),
     ).not.toThrow();
   });
 });

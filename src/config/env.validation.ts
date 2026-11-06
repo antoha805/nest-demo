@@ -17,9 +17,9 @@ import {
 } from 'class-validator';
 import { LOG_TRANSPORTS, LogTransport } from './log-transports';
 
-// smtp sends through MAIL_URL, and log writes mails to the log, as in
-// development.
-export const MAIL_MAILERS = ['smtp', 'log'] as const;
+// smtp sends through MAIL_URL, ses through Amazon SES, and log writes mails to
+// the log, as in development.
+export const MAIL_MAILERS = ['smtp', 'ses', 'log'] as const;
 
 export type MailMailer = (typeof MAIL_MAILERS)[number];
 
@@ -99,10 +99,21 @@ export class EnvironmentVariables {
   })
   MAIL_URL?: string;
 
-  @ValidateIf((env: EnvironmentVariables) => env.MAIL_MAILER === 'smtp')
+  @ValidateIf((env: EnvironmentVariables) =>
+    ['smtp', 'ses'].includes(env.MAIL_MAILER as string),
+  )
   @IsString()
   @IsNotEmpty()
   MAIL_FROM?: string;
+
+  // The SES region, such as eu-central-1. The AWS SDK finds the credentials,
+  // such as in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or the EC2
+  // instance's role.
+  @ValidateIf((env: EnvironmentVariables) => env.MAIL_MAILER === 'ses')
+  @Matches(/^[a-z]{2}(-[a-z]+)+-\d+$/, {
+    message: 'AWS_REGION must be an AWS region, such as eu-central-1',
+  })
+  AWS_REGION?: string;
 }
 
 export function validate(config: Record<string, unknown>) {

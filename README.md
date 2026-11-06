@@ -103,22 +103,23 @@ A failed deploy does not show up in GitHub. To see what the instance did, run `j
 
 Settings are read from environment variables and `.env`; see `.env.example`. Real environment variables take precedence over `.env`.
 
-| Variable         | Required    | Description                                                                        |
-| ---------------- | ----------- | ---------------------------------------------------------------------------------- |
-| `PORT`           | No          | API port (default `3000`)                                                          |
-| `LOG_LEVEL`      | No          | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` (default `info`)    |
-| `LOG_TRANSPORTS` | No          | Comma-separated log destinations, see below (default `stdout`)                     |
-| `DB_HOST`        | Yes         | Postgres host                                                                      |
-| `DB_PORT`        | Yes         | Postgres port                                                                      |
-| `DB_USERNAME`    | Yes         | Postgres user                                                                      |
-| `DB_PASSWORD`    | Yes         | Postgres password                                                                  |
-| `DB_NAME`        | Yes         | Postgres database                                                                  |
-| `JWT_SECRET`     | Yes         | Key that signs access tokens, at least 32 characters                               |
-| `JWT_EXPIRES_IN` | No          | Access token lifetime in seconds (default `3600`)                                  |
-| `APP_URL`        | No          | Where links in mails point, such as the frontend (default `http://localhost:3000`) |
-| `MAIL_MAILER`    | No          | How mails are sent: `smtp` or `log`. Unset or empty turns mail off                 |
-| `MAIL_URL`       | With `smtp` | SMTP server, such as `smtps://user:password@smtp.example.com:465`                  |
-| `MAIL_FROM`      | With `smtp` | Sender of mails, such as `nest-demo <noreply@example.com>`                         |
+| Variable         | Required             | Description                                                                        |
+| ---------------- | -------------------- | ---------------------------------------------------------------------------------- |
+| `PORT`           | No                   | API port (default `3000`)                                                          |
+| `LOG_LEVEL`      | No                   | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` (default `info`)    |
+| `LOG_TRANSPORTS` | No                   | Comma-separated log destinations, see below (default `stdout`)                     |
+| `DB_HOST`        | Yes                  | Postgres host                                                                      |
+| `DB_PORT`        | Yes                  | Postgres port                                                                      |
+| `DB_USERNAME`    | Yes                  | Postgres user                                                                      |
+| `DB_PASSWORD`    | Yes                  | Postgres password                                                                  |
+| `DB_NAME`        | Yes                  | Postgres database                                                                  |
+| `JWT_SECRET`     | Yes                  | Key that signs access tokens, at least 32 characters                               |
+| `JWT_EXPIRES_IN` | No                   | Access token lifetime in seconds (default `3600`)                                  |
+| `APP_URL`        | No                   | Where links in mails point, such as the frontend (default `http://localhost:3000`) |
+| `MAIL_MAILER`    | No                   | How mails are sent: `smtp`, `ses` or `log`. Unset or empty turns mail off          |
+| `MAIL_URL`       | With `smtp`          | SMTP server, such as `smtps://user:password@smtp.example.com:465`                  |
+| `MAIL_FROM`      | With `smtp` or `ses` | Sender of mails, such as `nest-demo <noreply@example.com>`                         |
+| `AWS_REGION`     | With `ses`           | SES region, such as `eu-central-1`                                                 |
 
 They are validated at startup, and the app exits with an error listing any missing or invalid values.
 
@@ -272,10 +273,18 @@ It renders as plain text and HTML, with the lines and buttons in the order they 
 `MAIL_MAILER` picks how mails are sent, like Laravel's:
 
 - `smtp` sends them through the SMTP server of `MAIL_URL`, from `MAIL_FROM`.
+- `ses` sends them through [Amazon SES](https://aws.amazon.com/ses/) in `AWS_REGION`, from `MAIL_FROM`. The AWS SDK is loaded only for this mailer.
 - `log` writes them to the log instead, including the address and text, as in development.
 - Unset or empty turns mail off: the mail channel is left out, and the app logs so at startup.
 
-As mails are sent within the request, a slow SMTP server slows down the request that sent the notification; a queue would fix that once it matters.
+As mails are sent within the request, a slow mail server slows down the request that sent the notification; a queue would fix that once it matters.
+
+#### Amazon SES
+
+- **Credentials** are found by the AWS SDK as usual: `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, or, on EC2, the instance's IAM role, which needs `ses:SendEmail` and keeps keys out of `prod.env`.
+- **The instance role from inside Docker** needs the instance metadata hop limit raised to 2, as the container is one hop further than IMDSv2 allows by default: `aws ec2 modify-instance-metadata-options --instance-id <id> --http-put-response-hop-limit 2 --http-endpoint enabled`. Without it, sending fails with a credentials error.
+- **The sender** in `MAIL_FROM` has to be an identity verified in SES: its address, or better its domain.
+- **New SES accounts are in the sandbox**: they only mail verified addresses, and a limited number per day, until production access is requested in the SES console.
 
 ## Pagination
 

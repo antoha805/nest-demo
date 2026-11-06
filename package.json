@@ -30,6 +30,7 @@
     "migration:run:prod": "node dist/database/migrate.js up"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1163.0",
     "@casl/ability": "^7.1.1",
     "@mikro-orm/core": "^7.2.7",
     "@mikro-orm/decorators": "^7.2.7",
@@ -64,7 +65,6 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
-    "@types/nodemailer": "^8.0.2",
     "@types/supertest": "^7.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
