@@ -1,14 +1,14 @@
 import { AuthenticatedUser } from '../../auth/authenticated-user';
 import { Notification } from '../../notifications/notification';
 import { Post } from '../../posts/post.entity';
+import { PublicUser, toPublicUser } from '../../users/public-user';
 import { Comment } from '../comment.entity';
 
 export interface PostCommentedData {
   postId: string;
   postTitle: string;
   commentId: string;
-  // Only the nickname, so the email stays private.
-  commenter: { id: string; nickname: string };
+  commenter: PublicUser;
 }
 
 // Sent to the author of a post that someone else commented on.
@@ -28,7 +28,7 @@ export class PostCommentedNotification extends Notification<PostCommentedData> {
       postId: this.post.id,
       postTitle: this.post.title,
       commentId: this.comment.id,
-      commenter: { id: this.commenter.id, nickname: this.commenter.nickname },
+      commenter: toPublicUser(this.commenter),
     };
   }
 }

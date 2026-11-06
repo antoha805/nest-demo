@@ -9,6 +9,7 @@ import {
   Trigger,
 } from '@mikro-orm/decorators/legacy';
 import { Post } from '../posts/post.entity';
+import { toPublicUser } from '../users/public-user';
 import { User } from '../users/user.entity';
 
 @Entity({ tableName: 'comments' })
@@ -38,14 +39,14 @@ export class Comment {
   postId!: string;
 
   // Null after the author is deleted. CommentsService populates it, and only
-  // the nickname is shown, so the email stays private.
+  // its public fields are shown, so the email stays private.
   @ManyToOne(() => User, {
     fieldName: 'authorId',
     nullable: true,
     deleteRule: 'set null',
     updateRule: 'no action',
     serializer: (author?: User | null) =>
-      author ? { id: author.id, nickname: author.nickname } : null,
+      author ? toPublicUser(author) : null,
   })
   author: User | null = null;
 
