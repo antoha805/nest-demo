@@ -1,6 +1,8 @@
+import { EntityManager } from '@mikro-orm/postgresql';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcrypt';
+import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
 import { AuthenticatedUser, toAuthenticatedUser } from './authenticated-user';
 import { CredentialsDto } from './dto/credentials.dto';
@@ -16,6 +18,7 @@ const DUMMY_HASH =
 @Injectable()
 export class AuthService {
   constructor(
+    private readonly em: EntityManager,
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly emailVerificationService: EmailVerificationService,
@@ -37,6 +40,20 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
     return this.issueToken(user.id);
+  }
+
+  // What GET /api/auth/me returns: the user, with their unread notifications
+  // count for a badge when the client starts. Populated on the user the
+  // guard loaded for this request, so only this route counts them.
+  async me(
+    user: AuthenticatedUser,
+  ): Promise<AuthenticatedUser & { unreadNotificationsCount: number }> {
+    const entity = this.em.getReference(User, user.id);
+    await this.em.populate(entity, ['unreadNotificationsCount']);
+    return {
+      ...user,
+      unreadNotificationsCount: entity.unreadNotificationsCount ?? 0,
+    };
   }
 
   async updateProfile(

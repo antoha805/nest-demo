@@ -9,7 +9,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { NotificationsService } from '../notifications/notifications.service';
 import { AuthService } from './auth.service';
 import type { AuthenticatedUser } from './authenticated-user';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -25,7 +24,6 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly emailVerificationService: EmailVerificationService,
-    private readonly notificationsService: NotificationsService,
   ) {}
 
   @Public()
@@ -46,13 +44,8 @@ export class AuthController {
   // With the unread count, for a notification badge when the client starts.
   // The stream sends it again on each connection.
   @Get('me')
-  async me(@CurrentUser() user: AuthenticatedUser) {
-    return {
-      ...user,
-      unreadNotificationsCount: await this.notificationsService.countUnread(
-        user.id,
-      ),
-    };
+  me(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.me(user);
   }
 
   // Confirms the email with the code mailed on registration. Also limited per

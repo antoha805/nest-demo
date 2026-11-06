@@ -106,10 +106,6 @@ export class NotificationsService {
     );
   }
 
-  countUnread(userId: string): Promise<number> {
-    return this.em.count(DatabaseNotification, { userId, readAt: null });
-  }
-
   // Keeps when it was first read.
   async markAsRead(id: string, userId: string): Promise<void> {
     const notification = await this.findOwn(id, userId);

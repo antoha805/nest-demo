@@ -1511,6 +1511,49 @@ describe('API (e2e)', () => {
           expect(JSON.stringify(data)).not.toContain(liker.email);
         });
 
+        it('loads unread counts for a list of users in one query', async () => {
+          const first = await createAuthoredPost();
+          const second = await createAuthoredPost();
+          await createComment(adminToken, first.post.id);
+          await createComment(adminToken, first.post.id);
+          await createComment(adminToken, second.post.id);
+          const [read] = (await listNotifications(first.token)).data;
+          await withToken(first.token)
+            .put(`/api/notifications/${read.id}/read`)
+            .expect(204);
+
+          const manager = em();
+          const execute = jest.spyOn(manager.getConnection(), 'execute');
+          try {
+            const users = await manager.find(
+              User,
+              { id: { $in: [first.id, second.id] } },
+              { populate: ['unreadNotificationsCount'] },
+            );
+
+            expect(execute).toHaveBeenCalledTimes(1);
+            // The count is a subquery column of the users query.
+            expect(execute.mock.calls[0][0] as string).toMatch(
+              /^select .*\(SELECT COUNT\(\*\)::int FROM "notifications" .*\) as "unreadNotificationsCount" from "users"/,
+            );
+            const counts = new Map(
+              users.map((u) => [u.id, u.unreadNotificationsCount]),
+            );
+            expect(counts).toEqual(
+              new Map([
+                [first.id, 1],
+                [second.id, 1],
+              ]),
+            );
+          } finally {
+            execute.mockRestore();
+          }
+
+          // Not counted unless asked for.
+          const plain = await em().findOneOrFail(User, first.id);
+          expect(plain.unreadNotificationsCount).toBeUndefined();
+        });
+
         it('pages notifications newest first', async () => {
           const author = await createAuthoredPost();
           const comments: Comment[] = [];

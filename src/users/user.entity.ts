@@ -1,6 +1,7 @@
 import { Collection, type Opt } from '@mikro-orm/core';
 import {
   Entity,
+  Formula,
   ManyToMany,
   PrimaryKey,
   Property,
@@ -28,6 +29,16 @@ export class User {
   // permissions from their roles, so they can read but not write.
   @Property({ type: 'datetime', columnType: 'timestamptz', nullable: true })
   emailVerifiedAt: Date | null = null;
+
+  // Lazy, so only queries that populate it pay for the count, such as
+  // GET /api/auth/me. A list that does gets it as a subquery column of the
+  // same query, rather than a query per user. Undefined when not populated.
+  @Formula(
+    (cols) =>
+      `(SELECT COUNT(*)::int FROM "notifications" WHERE "notifications"."userId" = ${cols.id} AND "notifications"."readAt" IS NULL)`,
+    { type: 'integer', lazy: true },
+  )
+  unreadNotificationsCount?: Opt<number>;
 
   @ManyToMany({
     entity: () => Role,
