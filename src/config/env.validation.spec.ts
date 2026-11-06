@@ -60,4 +60,49 @@ describe('validate', () => {
   it('does not expose values in the error message', () => {
     expect(() => validate({ ...env, DB_PORT: 'abc' })).not.toThrow(/s3cret/);
   });
+
+  it('defaults APP_URL to localhost', () => {
+    expect(validate(env).APP_URL).toBe('http://localhost:3000');
+  });
+
+  it.each(['example.com', 'ftp://example.com', ''])(
+    'rejects APP_URL=%j',
+    (APP_URL) => {
+      expect(() => validate({ ...env, APP_URL })).toThrow(/APP_URL/);
+    },
+  );
+
+  it('needs no mail settings, as mails are then logged', () => {
+    expect(validate(env)).toMatchObject({
+      MAIL_URL: undefined,
+      MAIL_FROM: undefined,
+    });
+  });
+
+  it('accepts SMTP settings', () => {
+    const result = validate({
+      ...env,
+      MAIL_URL: 'smtps://user:pass@smtp.example.com:465',
+      MAIL_FROM: 'nest-demo <noreply@example.com>',
+    });
+
+    expect(result.MAIL_URL).toBe('smtps://user:pass@smtp.example.com:465');
+  });
+
+  it('requires MAIL_FROM with MAIL_URL', () => {
+    expect(() =>
+      validate({ ...env, MAIL_URL: 'smtp://localhost:1025' }),
+    ).toThrow(/MAIL_FROM/);
+  });
+
+  it('rejects a MAIL_URL that is not SMTP, without showing it', () => {
+    const MAIL_URL = 'https://user:s3cret@example.com';
+
+    expect(() => validate({ ...env, MAIL_URL, MAIL_FROM: 'a' })).toThrow(
+      /MAIL_URL/,
+    );
+    expect(() => validate({ ...env, MAIL_URL, MAIL_FROM: 'a' })).not.toThrow(
+      /s3cret/,
+    );
+  });
 });

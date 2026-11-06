@@ -16,7 +16,15 @@ import { CursorPaginated } from './../src/common/cursor-paginated';
 import { Paginated } from './../src/common/paginated';
 import { Like } from './../src/likes/like.entity';
 import { DatabaseNotification } from './../src/notifications/database-notification.entity';
+import { Mail, Mailer } from './../src/mail/mailer';
+import { MailMessage } from './../src/notifications/messages/mail-message';
+import {
+  MailRecipient,
+  Notification as AppNotification,
+  NotificationChannelName,
+} from './../src/notifications/notification';
 import { NotificationBroadcaster } from './../src/notifications/notification-broadcaster';
+import { NotificationsService } from './../src/notifications/notifications.service';
 import { Post } from './../src/posts/post.entity';
 import {
   ADMIN_ROLE,
@@ -1440,6 +1448,121 @@ describe('API (e2e)', () => {
           } finally {
             stream.close();
           }
+        });
+
+        describe('mail', () => {
+          class MailedNotification extends AppNotification {
+            readonly type = 'test.mailed';
+
+            constructor(
+              private readonly channels: NotificationChannelName[] = ['mail'],
+            ) {
+              super();
+            }
+
+            via() {
+              return this.channels;
+            }
+
+            toDatabase() {
+              return {};
+            }
+
+            toMail(user: MailRecipient) {
+              return new MailMessage()
+                .subject('Welcome')
+                .greeting(`Hi ${user.nickname}!`)
+                .action('Open', '/posts/1');
+            }
+          }
+
+          const send = (userIds: string[], notification: AppNotification) =>
+            RequestContext.create(em(), () =>
+              app.get(NotificationsService).send(userIds, notification),
+            );
+
+          let mailerSend: jest.SpyInstance;
+          beforeEach(() => {
+            mailerSend = jest
+              .spyOn(app.get(Mailer), 'send')
+              .mockResolvedValue(undefined);
+          });
+          afterEach(() => mailerSend.mockRestore());
+
+          const registerWithId = async () => {
+            const user = await register();
+            return { ...user, id: (await currentUser(user.token)).id };
+          };
+
+          it('mails users at their email', async () => {
+            const first = await registerWithId();
+            const second = await registerWithId();
+
+            await send(
+              [first.id, second.id],
+              new MailedNotification(['database', 'mail']),
+            );
+
+            expect(mailerSend).toHaveBeenCalledTimes(2);
+            for (const user of [first, second]) {
+              expect(mailerSend).toHaveBeenCalledWith({
+                to: user.email,
+                subject: 'Welcome',
+                text: `Hi ${user.nickname}!\n\nOpen: http://app.test/posts/1`,
+                html: expect.stringContaining(
+                  'href="http://app.test/posts/1"',
+                ) as string,
+              });
+              const { data } = await listNotifications(user.token);
+              expect(data.map((n) => n.type)).toEqual(['test.mailed']);
+            }
+          });
+
+          it('skips deleted users, and a failed mail stops no other', async () => {
+            const first = await registerWithId();
+            const second = await registerWithId();
+            mailerSend.mockRejectedValueOnce(new Error('SMTP is down'));
+
+            await expect(
+              send(
+                [first.id, randomUUID(), second.id],
+                new MailedNotification(),
+              ),
+            ).resolves.toBeUndefined();
+
+            expect(
+              mailerSend.mock.calls.map(([mail]) => (mail as Mail).to),
+            ).toEqual([first.email, second.email]);
+          });
+
+          it('does not fail for a notification without toMail', async () => {
+            class Unmailable extends AppNotification {
+              readonly type = 'test.unmailable';
+              via(): NotificationChannelName[] {
+                return ['mail'];
+              }
+              toDatabase() {
+                return {};
+              }
+            }
+            const { id } = await registerWithId();
+
+            await expect(send([id], new Unmailable())).resolves.toBeUndefined();
+            expect(mailerSend).not.toHaveBeenCalled();
+          });
+
+          it('is left out of notifications by default', async () => {
+            const author = await createAuthoredPost();
+            await createComment(adminToken, author.post.id);
+            await withToken(adminToken)
+              .put(`/api/posts/${author.post.id}/like`)
+              .expect(204);
+
+            expect((await listNotifications(author.token)).data).toHaveLength(
+              2,
+            );
+            expect(mailerSend).not.toHaveBeenCalled();
+          });
         });
       });
     });

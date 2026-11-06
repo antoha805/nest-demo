@@ -7,6 +7,7 @@ import { cursorPaginate, CursorPaginated } from '../common/cursor-paginated';
 import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
 import { BroadcastChannel } from './channels/broadcast.channel';
 import { DatabaseChannel } from './channels/database.channel';
+import { MailChannel } from './channels/mail.channel';
 import {
   NotificationChannel,
   NotificationDelivery,
@@ -27,7 +28,7 @@ export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   // In the order they run: a broadcast names the stored notification, so the
-  // database comes first.
+  // database comes first, and mail is slowest, so it does not hold up the rest.
   private readonly channels: [NotificationChannelName, NotificationChannel][];
 
   constructor(
@@ -35,10 +36,12 @@ export class NotificationsService {
     private readonly broadcaster: NotificationBroadcaster,
     databaseChannel: DatabaseChannel,
     broadcastChannel: BroadcastChannel,
+    mailChannel: MailChannel,
   ) {
     this.channels = [
       ['database', databaseChannel],
       ['broadcast', broadcastChannel],
+      ['mail', mailChannel],
     ];
   }
 

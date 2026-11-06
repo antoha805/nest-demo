@@ -5,10 +5,14 @@ import {
   IsIn,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
+  IsUrl,
+  Matches,
   Max,
   Min,
   MinLength,
+  ValidateIf,
   validateSync,
 } from 'class-validator';
 import { LOG_TRANSPORTS, LogTransport } from './log-transports';
@@ -64,6 +68,27 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   JWT_EXPIRES_IN: number = 3600;
+
+  // Where links in mails point, such as the frontend.
+  @IsUrl({
+    protocols: ['http', 'https'],
+    require_protocol: true,
+    require_tld: false,
+  })
+  APP_URL: string = 'http://localhost:3000';
+
+  // Mails are logged rather than sent without it. Holds the password, so its
+  // error does not show it.
+  @IsOptional()
+  @Matches(/^smtps?:\/\/\S+$/, {
+    message: 'MAIL_URL must be an smtp:// or smtps:// URL',
+  })
+  MAIL_URL?: string;
+
+  @ValidateIf((env: EnvironmentVariables) => Boolean(env.MAIL_URL))
+  @IsString()
+  @IsNotEmpty()
+  MAIL_FROM?: string;
 }
 
 export function validate(config: Record<string, unknown>) {
