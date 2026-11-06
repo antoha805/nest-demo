@@ -34,10 +34,5 @@ export function createOrmConfig(env: DatabaseEnv) {
       pathTs: 'src/database/migrations',
       snapshot: false,
     },
-    schemaGenerator: {
-      // Where TypeORM recorded its migrations. Kept so the previous version can
-      // still be deployed, and left out of schema diffs so they do not drop it.
-      skipTables: ['migrations'],
-    },
   });
 }

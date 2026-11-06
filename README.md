@@ -46,7 +46,7 @@ This writes the difference between the entities and the database to a new file i
 
 Then apply it with `docker compose exec api npm run migration:run`, or `npm run migration:run` on the host. `npm run migration:revert` undoes the latest one, and `npm run migration:check` fails if the entities and the database differ.
 
-The project moved from TypeORM, whose migrations kept their names. On a database TypeORM migrated, the first `migration:run` records them as applied from its `migrations` table instead of running them again. That table is kept, so the TypeORM version can still be deployed, and schema diffs leave it out.
+The project moved from TypeORM, whose migrations kept their names. On a database TypeORM migrated, the first `migration:run` records them as applied from its `migrations` table instead of running them again. A later migration then drops that table. To deploy the TypeORM version again, first run `npm run migration:revert` once, which restores the table.
 
 ## Production image
 

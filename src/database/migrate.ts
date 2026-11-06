@@ -52,7 +52,8 @@ export async function migrate(orm: MikroORM, command = 'up', name?: string) {
 }
 
 // Databases migrated by TypeORM have run the same migrations under the same
-// names, so they are recorded as applied instead of running again.
+// names, so they are recorded as applied instead of running again. Runs before
+// any migration, as DropTypeOrmMigrations removes the table it reads.
 async function adoptTypeOrmMigrations(orm: MikroORM) {
   const migrator = orm.migrator;
   if ((await migrator.getExecuted()).length) {
