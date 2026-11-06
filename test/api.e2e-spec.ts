@@ -9,6 +9,8 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { AuthService } from './../src/auth/auth.service';
+import { EmailVerification } from './../src/auth/email-verification.entity';
+import { EmailVerificationService } from './../src/auth/email-verification.service';
 import { syncPermissions } from './../src/database/sync-permissions';
 import { Category } from './../src/categories/category.entity';
 import { Comment } from './../src/comments/comment.entity';
@@ -53,13 +55,22 @@ describe('API (e2e)', () => {
   const em = () => app.get(EntityManager).fork();
 
   // Skips the controller, as tests create more users than its rate limit allows.
-  const register = async () => {
+  // Confirmed by default, as most tests need users who can write: registered
+  // as with mail off, which confirms them without mailing a code.
+  const register = async ({ verified = true } = {}) => {
     const email = `${uniqueName()}@example.com`;
     const nickname = uniqueNickname();
-    const { accessToken } = await RequestContext.create(em(), () =>
-      app.get(AuthService).register({ email, nickname, password }),
-    );
-    return { email, nickname, token: accessToken };
+    const mailOff = verified
+      ? jest.spyOn(app.get(Mailer), 'enabled', 'get').mockReturnValue(false)
+      : null;
+    try {
+      const { accessToken } = await RequestContext.create(em(), () =>
+        app.get(AuthService).register({ email, nickname, password }),
+      );
+      return { email, nickname, token: accessToken };
+    } finally {
+      mailOff?.mockRestore();
+    }
   };
 
   const currentUser = async (token: string) => {
@@ -68,6 +79,7 @@ describe('API (e2e)', () => {
       id: string;
       email: string;
       nickname: string;
+      emailVerifiedAt: string | null;
       roles: string[];
       permissions: string[];
     };
@@ -245,7 +257,11 @@ describe('API (e2e)', () => {
   });
 
   describe('authentication', () => {
+    afterEach(() => jest.restoreAllMocks());
+
     it('registers and logs in with normalised emails', async () => {
+      // With mail off, so the user is confirmed and gets their role's permissions.
+      jest.spyOn(app.get(Mailer), 'enabled', 'get').mockReturnValue(false);
       const email = `${uniqueName()}@example.com`;
       const nickname = uniqueNickname();
       const registered = await anonymous()
@@ -374,6 +390,168 @@ describe('API (e2e)', () => {
       expect(JSON.stringify([user.body, users.body])).not.toContain(
         'passwordHash',
       );
+    });
+
+    describe('email verification', () => {
+      let mailerSend: jest.SpyInstance;
+      beforeEach(() => {
+        mailerSend = jest
+          .spyOn(app.get(Mailer), 'send')
+          .mockResolvedValue(undefined);
+      });
+
+      const codesMailedTo = (email: string) =>
+        mailerSend.mock.calls
+          .map(([mail]) => mail as Mail)
+          .filter((mail) => mail.to === email)
+          .map((mail) => /\b(\d{6})\b/.exec(mail.subject)![1]);
+      const lastCode = (email: string) => codesMailedTo(email).at(-1)!;
+      const otherCode = (code: string) =>
+        code === '000000' ? '000001' : '000000';
+
+      const verify = (token: string, code: string) =>
+        withToken(token).post('/api/auth/verify-email').send({ code });
+      const resend = (token: string) =>
+        withToken(token).post('/api/auth/verify-email/resend');
+      // Skips the controller, whose rate limit all tests share.
+      const verifyDirectly = async (token: string, code: string) => {
+        const user = await currentUser(token);
+        return RequestContext.create(em(), () =>
+          app
+            .get(EmailVerificationService)
+            .verify({ ...user, emailVerifiedAt: null }, code),
+        );
+      };
+      // As if time had passed since the code was sent.
+      const backdate = async (
+        token: string,
+        fields: { sentAt?: Date; expiresAt?: Date },
+      ) => {
+        const { id } = await currentUser(token);
+        await em().nativeUpdate(EmailVerification, { userId: id }, fields);
+      };
+
+      it('mails a code on registration, and confirms the email with it', async () => {
+        const { token, email } = await register({ verified: false });
+        expect(codesMailedTo(email)).toHaveLength(1);
+        const [mail] = mailerSend.mock.calls[0] as [Mail];
+        expect(mail.text).toContain(
+          `Your code to confirm your email is ${lastCode(email)}.`,
+        );
+
+        // Unconfirmed users can read and edit their profile, but not write.
+        await expect(currentUser(token)).resolves.toMatchObject({
+          emailVerifiedAt: null,
+          roles: ['member'],
+          permissions: [],
+        });
+        await withToken(token).get('/api/posts').expect(200);
+        await withToken(token)
+          .patch('/api/auth/me')
+          .send({ nickname: uniqueNickname() })
+          .expect(200);
+        const category = await createCategory();
+        await withToken(token)
+          .post('/api/posts')
+          .send({ title: 'T', content: 'C', categoryId: category.id })
+          .expect(403);
+
+        await verify(token, '12345').expect(400);
+        await verify(token, lastCode(email)).expect(204);
+
+        const confirmed = await currentUser(token);
+        expect(confirmed.emailVerifiedAt).not.toBeNull();
+        expect(confirmed.permissions).toContain(PERMISSIONS.POSTS_CREATE);
+        await withToken(token)
+          .post('/api/posts')
+          .send({ title: 'T', content: 'C', categoryId: category.id })
+          .expect(201);
+
+        // Confirming again changes nothing, and there is no code to resend.
+        await verify(token, lastCode(email)).expect(204);
+        await resend(token).expect(409);
+        expect(
+          await em().count(EmailVerification, { userId: confirmed.id }),
+        ).toBe(0);
+      });
+
+      it('stops a code after 5 wrong tries', async () => {
+        const { token, email } = await register({ verified: false });
+        const code = lastCode(email);
+
+        for (let i = 0; i < 5; i++) {
+          await expect(verifyDirectly(token, otherCode(code))).rejects.toThrow(
+            'The code is wrong',
+          );
+        }
+        await expect(verifyDirectly(token, code)).rejects.toThrow(
+          /tried too often/,
+        );
+        expect((await currentUser(token)).emailVerifiedAt).toBeNull();
+      });
+
+      it('expires codes after 15 minutes', async () => {
+        const { token, email } = await register({ verified: false });
+        await backdate(token, { expiresAt: new Date(Date.now() - 1000) });
+
+        await expect(verifyDirectly(token, lastCode(email))).rejects.toThrow(
+          /expired/,
+        );
+      });
+
+      it('only accepts a code for the account it was sent to', async () => {
+        const first = await register({ verified: false });
+        const second = await register({ verified: false });
+
+        const code = lastCode(first.email);
+
+        // The same 6 digits, one in a million, would be the second's own code.
+        if (code !== lastCode(second.email)) {
+          await expect(verifyDirectly(second.token, code)).rejects.toThrow(
+            'The code is wrong',
+          );
+        }
+        await verifyDirectly(first.token, code);
+      });
+
+      it('resends at most once a minute, and the new code replaces the old one', async () => {
+        const { token, email } = await register({ verified: false });
+        const first = lastCode(email);
+
+        const tooSoon = await resend(token).expect(429);
+        expect((tooSoon.body as { message: string }).message).toMatch(
+          /Wait \d+ seconds/,
+        );
+        expect(codesMailedTo(email)).toHaveLength(1);
+
+        await backdate(token, { sentAt: new Date(Date.now() - 61_000) });
+        await resend(token).expect(204);
+        const second = lastCode(email);
+        expect(codesMailedTo(email)).toHaveLength(2);
+
+        if (first !== second) {
+          await expect(verifyDirectly(token, first)).rejects.toThrow(
+            'The code is wrong',
+          );
+        }
+        await verify(token, second).expect(204);
+      });
+
+      it('confirms users straight away while mail is off', async () => {
+        jest.spyOn(app.get(Mailer), 'enabled', 'get').mockReturnValue(false);
+        const { token, email } = await register({ verified: false });
+
+        expect((await currentUser(token)).emailVerifiedAt).not.toBeNull();
+        expect(codesMailedTo(email)).toEqual([]);
+      });
+
+      it('confirms on resend once mail has been turned off', async () => {
+        const { token } = await register({ verified: false });
+        jest.spyOn(app.get(Mailer), 'enabled', 'get').mockReturnValue(false);
+
+        await resend(token).expect(204);
+        expect((await currentUser(token)).emailVerifiedAt).not.toBeNull();
+      });
     });
   });
 

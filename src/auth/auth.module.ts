@@ -6,14 +6,19 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { CaslModule } from '../casl/casl.module';
 import { PoliciesGuard } from '../casl/policies.guard';
 import { EnvironmentVariables } from '../config/env.validation';
+import { MailModule } from '../mail/mail.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { EmailVerificationService } from './email-verification.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Module({
   imports: [
     UsersModule,
+    MailModule,
+    NotificationsModule,
     CaslModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -32,6 +37,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
   controllers: [AuthController],
   providers: [
     AuthService,
+    EmailVerificationService,
     // Every route requires a token unless marked @Public(). Order matters:
     // PoliciesGuard reads the user that JwtAuthGuard sets.
     { provide: APP_GUARD, useClass: JwtAuthGuard },

@@ -13,6 +13,7 @@ describe('CaslAbilityFactory', () => {
       id: 'me',
       email: 'me@example.com',
       nickname: 'me',
+      emailVerifiedAt: new Date(),
       roles: [],
       permissions,
     };

@@ -24,6 +24,11 @@ export class User {
   @Property({ type: 'varchar', length: 60, lazy: true, hidden: true })
   passwordHash!: string;
 
+  // Null until the user confirms their email. Until then, they get no
+  // permissions from their roles, so they can read but not write.
+  @Property({ type: 'datetime', columnType: 'timestamptz', nullable: true })
+  emailVerifiedAt: Date | null = null;
+
   @ManyToMany({
     entity: () => Role,
     pivotTable: 'user_roles',

@@ -139,6 +139,16 @@ To add a transport, add its pino transport target to `src/config/log-transports.
 
 `POST /api/auth/register` and `POST /api/auth/login` return an `accessToken`. Send it as `Authorization: Bearer <token>`. Both endpoints allow 10 requests per minute per IP.
 
+### Email confirmation
+
+Registering mails a 6-digit code to the new user, who confirms their email by sending it to `POST /api/auth/verify-email` as `{ "code": "123456" }`. Until then, `GET /api/auth/me` shows `emailVerifiedAt: null` and no permissions: the user can log in, read, change their nickname and confirm, but not post, comment or like. Their roles apply as soon as they confirm.
+
+- A code expires after 15 minutes, and stops working after 5 wrong tries, so it cannot be guessed. `verify-email` also allows 10 requests per minute per IP.
+- `POST /api/auth/verify-email/resend` mails a new code, which replaces the old one, at most once a minute: sooner gets `429 Too Many Requests`. Once confirmed, it gets `409 Conflict`, and confirming again does nothing.
+- Codes are stored as an HMAC keyed with `JWT_SECRET`, never as is, and only work for the account they were sent to.
+- With mail off (`MAIL_MAILER` unset), no code could arrive, so new users are confirmed when they register, and unconfirmed ones when they ask for a new code.
+- Users who registered before confirmation existed were marked as confirmed by the migration that added it.
+
 A user holds roles, each role grants permissions, and permissions can also be granted to a user directly. They are read from the database on every request, so changes apply immediately to tokens already issued. Passwords are hashed with bcrypt.
 
 New users get the `member` role. The API cannot grant the first admin, so register a user and promote them from the command line:
@@ -159,46 +169,48 @@ Removing a name from that file makes the next sync delete the permission and all
 
 ## Endpoints
 
-| Method | Path                              | Permission                                     | Description                           |
-| ------ | --------------------------------- | ---------------------------------------------- | ------------------------------------- |
-| POST   | `/api/auth/register`              | Public                                         | Create an account                     |
-| POST   | `/api/auth/login`                 | Public                                         | Get an access token                   |
-| GET    | `/api/auth/me`                    | Any logged-in user                             | Get your roles and permissions        |
-| POST   | `/api/categories`                 | `categories.create`                            | Create a category                     |
-| GET    | `/api/categories`                 | Public                                         | List categories                       |
-| GET    | `/api/categories/:id`             | Public                                         | Get a category                        |
-| PATCH  | `/api/categories/:id`             | `categories.update`                            | Update a category                     |
-| DELETE | `/api/categories/:id`             | `categories.delete`                            | Delete a category                     |
-| POST   | `/api/posts`                      | `posts.create`                                 | Create a post                         |
-| GET    | `/api/posts`                      | Public                                         | List posts                            |
-| GET    | `/api/posts/:id`                  | Public                                         | Get a post                            |
-| PATCH  | `/api/posts/:id`                  | `posts.update.all` or `posts.update.own`       | Update a post                         |
-| DELETE | `/api/posts/:id`                  | `posts.delete.all` or `posts.delete.own`       | Delete a post                         |
-| PUT    | `/api/posts/:id/like`             | `posts.like`                                   | Like a post                           |
-| DELETE | `/api/posts/:id/like`             | `posts.like`                                   | Remove your like from a post          |
-| POST   | `/api/posts/:postId/comments`     | `comments.create`                              | Comment on a post                     |
-| GET    | `/api/posts/:postId/comments`     | Public                                         | List a post's comments                |
-| PATCH  | `/api/comments/:id`               | `comments.update.own`                          | Update your comment                   |
-| DELETE | `/api/comments/:id`               | `comments.delete.all` or `comments.delete.own` | Delete a comment                      |
-| PUT    | `/api/comments/:id/like`          | `comments.like`                                | Like a comment                        |
-| DELETE | `/api/comments/:id/like`          | `comments.like`                                | Remove your like from a comment       |
-| GET    | `/api/users`                      | `users.read`                                   | List users                            |
-| GET    | `/api/users/:id`                  | `users.read`                                   | Get a user                            |
-| PUT    | `/api/users/:id/roles`            | `users.manage`                                 | Replace a user's roles                |
-| PUT    | `/api/users/:id/permissions`      | `users.manage`                                 | Replace direct permissions            |
-| DELETE | `/api/users/:id`                  | `users.manage`                                 | Delete a user                         |
-| POST   | `/api/roles`                      | `roles.manage`                                 | Create a role                         |
-| GET    | `/api/roles`                      | `roles.read`                                   | List roles                            |
-| GET    | `/api/roles/:id`                  | `roles.read`                                   | Get a role                            |
-| PATCH  | `/api/roles/:id`                  | `roles.manage`                                 | Update a role                         |
-| DELETE | `/api/roles/:id`                  | `roles.manage`                                 | Delete a role                         |
-| GET    | `/api/permissions`                | `roles.read`                                   | List permissions                      |
-| GET    | `/api/notifications`              | Any logged-in user                             | List your notifications               |
-| GET    | `/api/notifications/unread-count` | Any logged-in user                             | Count your unread notifications       |
-| GET    | `/api/notifications/stream`       | Any logged-in user                             | Receive your notifications live (SSE) |
-| PUT    | `/api/notifications/:id/read`     | Any logged-in user                             | Mark a notification as read           |
-| DELETE | `/api/notifications/:id/read`     | Any logged-in user                             | Mark a notification as unread         |
-| POST   | `/api/notifications/read-all`     | Any logged-in user                             | Mark all your notifications as read   |
+| Method | Path                              | Permission                                     | Description                             |
+| ------ | --------------------------------- | ---------------------------------------------- | --------------------------------------- |
+| POST   | `/api/auth/register`              | Public                                         | Create an account                       |
+| POST   | `/api/auth/login`                 | Public                                         | Get an access token                     |
+| GET    | `/api/auth/me`                    | Any logged-in user                             | Get your roles and permissions          |
+| POST   | `/api/auth/verify-email`          | Any logged-in user                             | Confirm your email with the mailed code |
+| POST   | `/api/auth/verify-email/resend`   | Any logged-in user                             | Mail a new code                         |
+| POST   | `/api/categories`                 | `categories.create`                            | Create a category                       |
+| GET    | `/api/categories`                 | Public                                         | List categories                         |
+| GET    | `/api/categories/:id`             | Public                                         | Get a category                          |
+| PATCH  | `/api/categories/:id`             | `categories.update`                            | Update a category                       |
+| DELETE | `/api/categories/:id`             | `categories.delete`                            | Delete a category                       |
+| POST   | `/api/posts`                      | `posts.create`                                 | Create a post                           |
+| GET    | `/api/posts`                      | Public                                         | List posts                              |
+| GET    | `/api/posts/:id`                  | Public                                         | Get a post                              |
+| PATCH  | `/api/posts/:id`                  | `posts.update.all` or `posts.update.own`       | Update a post                           |
+| DELETE | `/api/posts/:id`                  | `posts.delete.all` or `posts.delete.own`       | Delete a post                           |
+| PUT    | `/api/posts/:id/like`             | `posts.like`                                   | Like a post                             |
+| DELETE | `/api/posts/:id/like`             | `posts.like`                                   | Remove your like from a post            |
+| POST   | `/api/posts/:postId/comments`     | `comments.create`                              | Comment on a post                       |
+| GET    | `/api/posts/:postId/comments`     | Public                                         | List a post's comments                  |
+| PATCH  | `/api/comments/:id`               | `comments.update.own`                          | Update your comment                     |
+| DELETE | `/api/comments/:id`               | `comments.delete.all` or `comments.delete.own` | Delete a comment                        |
+| PUT    | `/api/comments/:id/like`          | `comments.like`                                | Like a comment                          |
+| DELETE | `/api/comments/:id/like`          | `comments.like`                                | Remove your like from a comment         |
+| GET    | `/api/users`                      | `users.read`                                   | List users                              |
+| GET    | `/api/users/:id`                  | `users.read`                                   | Get a user                              |
+| PUT    | `/api/users/:id/roles`            | `users.manage`                                 | Replace a user's roles                  |
+| PUT    | `/api/users/:id/permissions`      | `users.manage`                                 | Replace direct permissions              |
+| DELETE | `/api/users/:id`                  | `users.manage`                                 | Delete a user                           |
+| POST   | `/api/roles`                      | `roles.manage`                                 | Create a role                           |
+| GET    | `/api/roles`                      | `roles.read`                                   | List roles                              |
+| GET    | `/api/roles/:id`                  | `roles.read`                                   | Get a role                              |
+| PATCH  | `/api/roles/:id`                  | `roles.manage`                                 | Update a role                           |
+| DELETE | `/api/roles/:id`                  | `roles.manage`                                 | Delete a role                           |
+| GET    | `/api/permissions`                | `roles.read`                                   | List permissions                        |
+| GET    | `/api/notifications`              | Any logged-in user                             | List your notifications                 |
+| GET    | `/api/notifications/unread-count` | Any logged-in user                             | Count your unread notifications         |
+| GET    | `/api/notifications/stream`       | Any logged-in user                             | Receive your notifications live (SSE)   |
+| PUT    | `/api/notifications/:id/read`     | Any logged-in user                             | Mark a notification as read             |
+| DELETE | `/api/notifications/:id/read`     | Any logged-in user                             | Mark a notification as unread           |
+| POST   | `/api/notifications/read-all`     | Any logged-in user                             | Mark all your notifications as read     |
 
 A category that still has posts cannot be deleted (`409 Conflict`). Categories return `postsCount`, which only counts published posts, so it is the same for every user and does not reveal drafts.
 

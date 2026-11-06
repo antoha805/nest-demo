@@ -2,6 +2,7 @@ import { EntityCaseNamingStrategy } from '@mikro-orm/core';
 import { Migrator } from '@mikro-orm/migrations';
 import { defineConfig } from '@mikro-orm/postgresql';
 import { Category } from '../categories/category.entity';
+import { EmailVerification } from '../auth/email-verification.entity';
 import { Comment } from '../comments/comment.entity';
 import { EnvironmentVariables } from '../config/env.validation';
 import { Like } from '../likes/like.entity';
@@ -31,6 +32,7 @@ export function createOrmConfig(env: DatabaseEnv) {
       Comment,
       Like,
       DatabaseNotification,
+      EmailVerification,
       User,
       Role,
       Permission,

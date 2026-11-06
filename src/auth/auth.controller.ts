@@ -16,10 +16,15 @@ import { Public } from './decorators/public.decorator';
 import { CredentialsDto } from './dto/credentials.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { EmailVerificationService } from './email-verification.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly emailVerificationService: EmailVerificationService,
+  ) {}
 
   @Public()
   @UseGuards(ThrottlerGuard)
@@ -39,6 +44,24 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthenticatedUser) {
     return user;
+  }
+
+  // Confirms the email with the code mailed on registration. Also limited per
+  // IP, on top of the tries each code allows.
+  @UseGuards(ThrottlerGuard)
+  @Post('verify-email')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  verifyEmail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() { code }: VerifyEmailDto,
+  ) {
+    return this.emailVerificationService.verify(user, code);
+  }
+
+  @Post('verify-email/resend')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  resendVerification(@CurrentUser() user: AuthenticatedUser) {
+    return this.emailVerificationService.resend(user);
   }
 
   // Any signed-in user can change their own profile, so no permission is needed.
