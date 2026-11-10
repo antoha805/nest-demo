@@ -1,4 +1,5 @@
 import type { Opt } from '@mikro-orm/core';
+import { FullTextType } from '@mikro-orm/postgresql';
 import {
   Entity,
   Formula,
@@ -32,6 +33,17 @@ export class Post {
 
   @Property({ type: 'boolean', default: false })
   published: Opt<boolean> = false;
+
+  // What PostsService searches, kept up to date by Postgres. Created by a
+  // migration, which also creates the text search configuration it uses.
+  @Index({ name: 'posts_search_vector_index', type: 'fulltext' })
+  @Property({
+    type: new FullTextType('simple_unaccent'),
+    generated: `(setweight(to_tsvector('simple_unaccent', "title"), 'A') || setweight(to_tsvector('simple_unaccent', "content"), 'B')) stored`,
+    lazy: true,
+    hidden: true,
+  })
+  searchVector?: Opt<string>;
 
   @Index()
   @ManyToOne(() => Category, {

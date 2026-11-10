@@ -218,6 +218,139 @@ describe('API (e2e)', () => {
     await http().delete(`/api/categories/${id}`).expect(204);
   });
 
+  describe('post search', () => {
+    // Letters only, so each is one word no other post contains.
+    const uniqueWord = () =>
+      randomUUID()
+        .replaceAll('-', '')
+        .replace(/\d/g, (digit) => 'ghijklmnop'[Number(digit)]);
+
+    let categoryId: string;
+    const postIds: string[] = [];
+
+    const createPost = async (
+      fields: { title: string; content: string; published?: boolean },
+      token = adminToken,
+    ) => {
+      const response = await withToken(token)
+        .post('/api/posts')
+        .send({ published: true, ...fields, categoryId })
+        .expect(201);
+      const { id } = response.body as Post;
+      postIds.push(id);
+      return id;
+    };
+
+    const search = async (
+      q: string,
+      client: ReturnType<typeof anonymous> = anonymous(),
+    ) => {
+      const response = await client.get('/api/posts').query({ q }).expect(200);
+      return response.body as Paginated<Post>;
+    };
+    const searchIds = async (
+      q: string,
+      client?: ReturnType<typeof anonymous>,
+    ) => (await search(q, client)).data.map((post) => post.id);
+
+    beforeAll(async () => {
+      categoryId = (await createCategory()).id;
+    });
+
+    afterAll(async () => {
+      for (const id of postIds) {
+        await http().delete(`/api/posts/${id}`).expect(204);
+      }
+      await http().delete(`/api/categories/${categoryId}`).expect(204);
+    });
+
+    it('ranks matches in the title above those in the content', async () => {
+      const word = uniqueWord();
+      // Created first, so the newer posts would come first without the rank.
+      const inTitle = await createPost({
+        title: `About ${word}`,
+        content: 'Nothing else',
+      });
+      const inContent = await createPost({
+        title: 'Something else',
+        content: `Mentions ${word} and ${word} again`,
+      });
+      await createPost({ title: 'Unrelated', content: 'Unrelated' });
+
+      await expect(searchIds(word)).resolves.toEqual([inTitle, inContent]);
+      await expect(searchIds(word.toUpperCase())).resolves.toEqual([
+        inTitle,
+        inContent,
+      ]);
+      const page = await search(word);
+      expect(page).toMatchObject({ total: 2, page: 1, totalPages: 1 });
+      expect(page.data[0]).not.toHaveProperty('searchVector');
+      expect(page.data[0]).toHaveProperty('likesCount', 0);
+    });
+
+    it('matches words whatever their accents and language', async () => {
+      const word = uniqueWord();
+      const accented = await createPost({
+        title: `Crème ${word}`,
+        content: 'Привет, мир',
+      });
+      const plain = await createPost({
+        title: `Creme ${word}`,
+        content: 'Other words',
+      });
+
+      for (const q of [`creme ${word}`, `CRÈME ${word}`]) {
+        expect((await searchIds(q)).sort()).toEqual([accented, plain].sort());
+      }
+      await expect(searchIds(`${word} мир`)).resolves.toEqual([accented]);
+      await expect(searchIds(`${word} -мир`)).resolves.toEqual([plain]);
+      await expect(searchIds(`"${word} creme"`)).resolves.toEqual([]);
+    });
+
+    it('finds only the posts the user can see', async () => {
+      const word = uniqueWord();
+      const draft = await createPost({
+        title: word,
+        content: 'Draft',
+        published: false,
+      });
+      const { token } = await register();
+
+      await expect(searchIds(word)).resolves.toEqual([]);
+      await expect(searchIds(word, withToken(token))).resolves.toEqual([]);
+      await expect(searchIds(word, http())).resolves.toEqual([draft]);
+
+      // Writing the post again is searched by its new title.
+      const renamed = uniqueWord();
+      await http()
+        .patch(`/api/posts/${draft}`)
+        .send({ title: renamed })
+        .expect(200);
+      await expect(searchIds(word, http())).resolves.toEqual([]);
+      await expect(searchIds(renamed, http())).resolves.toEqual([draft]);
+    });
+
+    it('lists all posts for a blank search and rejects a long one', async () => {
+      const all = await anonymous().get('/api/posts').expect(200);
+      const blank = await search('   ');
+      expect(blank.total).toBe((all.body as Paginated<Post>).total);
+      await expect(searchIds('!!! ---')).resolves.toEqual([]);
+      // MikroORM writes the rank's search into the SQL instead of binding it.
+      const quotes = `O'${uniqueWord()}'); DROP TABLE "posts"; -- \\`;
+      const quoted = await createPost({ title: quotes, content: 'Quotes' });
+      await expect(searchIds(quotes)).resolves.toEqual([quoted]);
+
+      await anonymous()
+        .get('/api/posts')
+        .query({ q: 'a'.repeat(201) })
+        .expect(400);
+      await anonymous()
+        .get('/api/posts')
+        .query({ q: ['a', 'b'] })
+        .expect(400);
+    });
+  });
+
   it('rejects invalid input', async () => {
     const missingId = randomUUID();
 

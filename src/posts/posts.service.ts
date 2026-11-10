@@ -1,4 +1,11 @@
-import { EntityDTO, FilterQuery, wrap } from '@mikro-orm/core';
+import {
+  EntityDTO,
+  FilterQuery,
+  ObjectQuery,
+  QueryOrderMap,
+  raw,
+  wrap,
+} from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import {
   BadRequestException,
@@ -13,12 +20,12 @@ import { CommentsService } from '../comments/comments.service';
 import { CursorPaginated } from '../common/cursor-paginated';
 import { definedFields } from '../common/defined-fields';
 import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { paginate, Paginated } from '../common/paginated';
 import { LikeableType } from '../likes/like.entity';
 import { LikesService } from '../likes/likes.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreatePostDto } from './dto/create-post.dto';
+import { FindPostsQueryDto } from './dto/find-posts-query.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { PostLikedNotification } from './notifications/post-liked.notification';
 import { PostVisibilityService } from './post-visibility.service';
@@ -26,6 +33,24 @@ import { Post } from './post.entity';
 
 // What post responses show, beyond the post: the counts are lazy formulas.
 const RESPONSE_POPULATE = ['category', 'likesCount', 'commentsCount'] as const;
+
+// The posts that match a search, the best matches first: the title weighs
+// more than the content, and long contents do not win by their length alone.
+function searchFor(q: string): {
+  where: ObjectQuery<Post>;
+  orderBy: QueryOrderMap<Post>;
+} {
+  const query = `websearch_to_tsquery('simple_unaccent', ?)`;
+  return {
+    where: {
+      [raw((alias) => `${alias}."searchVector" @@ ${query}`, [q])]: [],
+    },
+    orderBy: {
+      [raw((alias) => `ts_rank_cd(${alias}."searchVector", ${query}, 1)`, [q])]:
+        'desc',
+    },
+  };
+}
 
 export type PostWithComments = EntityDTO<Post> & {
   comments: CursorPaginated<Comment>;
@@ -59,18 +84,22 @@ export class PostsService {
   }
 
   async findAll(
-    query: PaginationQueryDto,
+    query: FindPostsQueryDto,
     user?: AuthenticatedUser,
   ): Promise<Paginated<Post>> {
+    const visible = this.postVisibilityService.visibleWhere(user);
+    const { where, orderBy } = query.q
+      ? searchFor(query.q)
+      : { where: {}, orderBy: {} };
     const page = await paginate(
       ({ limit, offset }) =>
         this.em.findAndCount(
           Post,
-          this.postVisibilityService.visibleWhere(user),
+          { $and: [visible, where] },
           {
             populate: RESPONSE_POPULATE,
             // The id keeps pages stable when posts share a timestamp.
-            orderBy: { createdAt: 'desc', id: 'desc' },
+            orderBy: [orderBy, { createdAt: 'desc', id: 'desc' }],
             limit,
             offset,
           },

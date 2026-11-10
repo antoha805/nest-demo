@@ -9,6 +9,7 @@ import { Migration20261106130000_DropTypeOrmMigrations } from './Migration202611
 import { Migration20261106140000_AddUserNickname } from './Migration20261106140000_AddUserNickname';
 import { Migration20261106150000_AddNotifications } from './Migration20261106150000_AddNotifications';
 import { Migration20261106160000_AddEmailVerification } from './Migration20261106160000_AddEmailVerification';
+import { Migration20261110120000_AddPostSearch } from './Migration20261110120000_AddPostSearch';
 
 // Run in this order. `npm run migration:create` writes new ones, which then have
 // to be added at the end.
@@ -24,4 +25,5 @@ export const migrations = [
   Migration20261106140000_AddUserNickname,
   Migration20261106150000_AddNotifications,
   Migration20261106160000_AddEmailVerification,
+  Migration20261110120000_AddPostSearch,
 ];

@@ -18,8 +18,8 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { CaslAbilityFactory } from '../casl/casl-ability.factory';
 import { CheckPolicies } from '../casl/check-policies.decorator';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CreatePostDto } from './dto/create-post.dto';
+import { FindPostsQueryDto } from './dto/find-posts-query.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { PostAccess } from './post-access.guard';
 import { Post as PostEntity } from './post.entity';
@@ -42,7 +42,7 @@ export class PostsController {
   @Public()
   @Get()
   findAll(
-    @Query() query: PaginationQueryDto,
+    @Query() query: FindPostsQueryDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
     return this.postsService.findAll(query, user);
