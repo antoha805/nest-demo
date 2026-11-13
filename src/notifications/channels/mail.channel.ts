@@ -8,6 +8,7 @@ import { MailRecipient } from '../notification';
 import {
   NotificationChannel,
   NotificationDelivery,
+  sendEach,
 } from './notification-channel';
 
 // Mails each user at their email. Sent one by one, so one failure does not
@@ -33,8 +34,9 @@ export class MailChannel implements NotificationChannel {
     const recipients = await this.findRecipients(
       deliveries.map(({ userId }) => userId),
     );
-    const results = await Promise.allSettled(
-      deliveries.map(async ({ userId, notification }) => {
+    await sendEach(
+      deliveries,
+      async ({ userId, notification }) => {
         // Deleted since the notification was sent.
         const recipient = recipients.get(userId);
         if (!recipient) {
@@ -42,18 +44,9 @@ export class MailChannel implements NotificationChannel {
         }
         const mail = notification.toMail(recipient).render(this.appUrl);
         await this.mailer.send({ to: recipient.email, ...mail });
-      }),
+      },
+      'mail(s)',
     );
-
-    const errors = results.flatMap((result) =>
-      result.status === 'rejected' ? [result.reason as unknown] : [],
-    );
-    if (errors.length) {
-      throw new AggregateError(
-        errors,
-        `${errors.length} of ${deliveries.length} mail(s) failed`,
-      );
-    }
   }
 
   private async findRecipients(

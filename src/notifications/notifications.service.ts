@@ -13,6 +13,7 @@ import {
   NotificationChannel,
   NotificationDelivery,
 } from './channels/notification-channel';
+import { SmsChannel } from './channels/sms.channel';
 import { DatabaseNotification } from './database-notification.entity';
 import { Notification, NotificationChannelName } from './notification';
 import {
@@ -34,9 +35,9 @@ export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   // In the order they run: a broadcast names the stored notification, so the
-  // database comes first, and mail is slowest, so it does not hold up the rest.
-  // Mail is left out while it is off, so notifications that list it are still
-  // sent through the others.
+  // database comes first, and mail and SMS go to outside services, so they do
+  // not hold up the rest. Each is left out while it is off, so notifications
+  // that list it are still sent through the others.
   private readonly channels: [NotificationChannelName, NotificationChannel][];
 
   constructor(
@@ -45,6 +46,7 @@ export class NotificationsService {
     databaseChannel: DatabaseChannel,
     broadcastChannel: BroadcastChannel,
     mailChannel: MailChannel,
+    smsChannel: SmsChannel,
   ) {
     this.channels = [
       ['database', databaseChannel],
@@ -52,6 +54,9 @@ export class NotificationsService {
     ];
     if (mailChannel.enabled) {
       this.channels.push(['mail', mailChannel]);
+    }
+    if (smsChannel.enabled) {
+      this.channels.push(['sms', smsChannel]);
     }
   }
 

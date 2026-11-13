@@ -21,6 +21,11 @@ export class User {
   @Property({ type: 'varchar', length: 30, unique: true })
   nickname!: string;
 
+  // In E.164, such as +4915112345678, for SMS notifications. Private like the
+  // email, and not confirmed: the user's word is taken for it.
+  @Property({ type: 'varchar', length: 16, nullable: true })
+  phone: string | null = null;
+
   // Only loaded by UsersService.findCredentials, and never serialized.
   @Property({ type: 'varchar', length: 60, lazy: true, hidden: true })
   passwordHash!: string;

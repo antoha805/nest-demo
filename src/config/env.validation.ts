@@ -23,6 +23,12 @@ export const MAIL_MAILERS = ['smtp', 'ses', 'log'] as const;
 
 export type MailMailer = (typeof MAIL_MAILERS)[number];
 
+// sns sends through Amazon SNS, twilio through Twilio, and log writes texts to
+// the log, as in development.
+export const SMS_DRIVERS = ['sns', 'twilio', 'log'] as const;
+
+export type SmsDriver = (typeof SMS_DRIVERS)[number];
+
 export class EnvironmentVariables {
   @Type(() => Number)
   @IsInt()
@@ -106,10 +112,48 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   MAIL_FROM?: string;
 
-  // The SES region, such as eu-central-1. The AWS SDK finds the credentials,
-  // such as in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or the EC2
-  // instance's role.
-  @ValidateIf((env: EnvironmentVariables) => env.MAIL_MAILER === 'ses')
+  // How texts are sent. Unset or empty turns SMS off, and notifications leave
+  // out the sms channel.
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' ? undefined : value,
+  )
+  @IsOptional()
+  @IsIn(SMS_DRIVERS)
+  SMS_DRIVER?: SmsDriver;
+
+  // The sender: for twilio, a number of the account, an alphanumeric sender ID
+  // or a messaging service SID (MG...); for sns, an optional sender ID, where
+  // the destination country allows one.
+  @Transform(({ value }: { value: unknown }) =>
+    value === '' ? undefined : value,
+  )
+  @ValidateIf(
+    (env: EnvironmentVariables) =>
+      env.SMS_DRIVER === 'twilio' || env.SMS_FROM !== undefined,
+  )
+  @IsString()
+  @IsNotEmpty()
+  SMS_FROM?: string;
+
+  @ValidateIf((env: EnvironmentVariables) => env.SMS_DRIVER === 'twilio')
+  @Matches(/^AC[0-9a-f]{32}$/, {
+    message: 'TWILIO_ACCOUNT_SID must be a Twilio account SID, such as AC...',
+  })
+  TWILIO_ACCOUNT_SID?: string;
+
+  // A secret, so its error does not show it.
+  @ValidateIf((env: EnvironmentVariables) => env.SMS_DRIVER === 'twilio')
+  @IsString({ message: 'TWILIO_AUTH_TOKEN must be set' })
+  @IsNotEmpty({ message: 'TWILIO_AUTH_TOKEN must be set' })
+  TWILIO_AUTH_TOKEN?: string;
+
+  // The SES and SNS region, such as eu-central-1. The AWS SDK finds the
+  // credentials, such as in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or the
+  // EC2 instance's role.
+  @ValidateIf(
+    (env: EnvironmentVariables) =>
+      env.MAIL_MAILER === 'ses' || env.SMS_DRIVER === 'sns',
+  )
   @Matches(/^[a-z]{2}(-[a-z]+)+-\d+$/, {
     message: 'AWS_REGION must be an AWS region, such as eu-central-1',
   })

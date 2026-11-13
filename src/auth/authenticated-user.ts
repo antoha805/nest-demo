@@ -5,6 +5,7 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   nickname: string;
+  phone: string | null;
   emailVerifiedAt: Date | null;
   roles: string[];
   // Empty until the email is confirmed.
@@ -29,6 +30,7 @@ export function toAuthenticatedUser(user: User): AuthenticatedUser {
     id: user.id,
     email: user.email,
     nickname: user.nickname,
+    phone: user.phone,
     emailVerifiedAt: user.emailVerifiedAt,
     roles: user.roles.getItems().map((role) => role.name),
     permissions: [...new Set(permissions)].sort(),

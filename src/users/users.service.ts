@@ -50,10 +50,19 @@ export class UsersService {
     return this.em.findOne(User, { email }, { fields: ['id', 'passwordHash'] });
   }
 
-  async setNickname(id: string, nickname: string): Promise<User> {
+  // Changes what is given, leaving out undefined. A null phone removes it.
+  async updateProfile(
+    id: string,
+    { nickname, phone }: { nickname?: string; phone?: string | null },
+  ): Promise<User> {
     const user = await this.findOne(id);
     // A nickname another user has fails the unique constraint, giving a 409.
-    user.nickname = nickname;
+    if (nickname !== undefined) {
+      user.nickname = nickname;
+    }
+    if (phone !== undefined) {
+      user.phone = phone;
+    }
     await this.em.flush();
     return user;
   }

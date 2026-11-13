@@ -103,23 +103,27 @@ A failed deploy does not show up in GitHub. To see what the instance did, run `j
 
 Settings are read from environment variables and `.env`; see `.env.example`. Real environment variables take precedence over `.env`.
 
-| Variable         | Required             | Description                                                                          |
-| ---------------- | -------------------- | ------------------------------------------------------------------------------------ |
-| `PORT`           | No                   | API port (default `3000`)                                                            |
-| `LOG_LEVEL`      | No                   | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` (default `info`)      |
-| `LOG_TRANSPORTS` | No                   | Comma-separated log destinations, see below (default `stdout`)                       |
-| `DB_HOST`        | Yes                  | Postgres host                                                                        |
-| `DB_PORT`        | Yes                  | Postgres port                                                                        |
-| `DB_USERNAME`    | Yes                  | Postgres user                                                                        |
-| `DB_PASSWORD`    | Yes                  | Postgres password                                                                    |
-| `DB_NAME`        | Yes                  | Postgres database                                                                    |
-| `JWT_SECRET`     | Yes                  | Key that signs access tokens, at least 32 characters                                 |
-| `JWT_EXPIRES_IN` | No                   | Access token lifetime in seconds (default `3600`)                                    |
-| `APP_URL`        | No                   | The app's own URL, which links in mails start with (default `http://localhost:3000`) |
-| `MAIL_MAILER`    | No                   | How mails are sent: `smtp`, `ses` or `log`. Unset or empty turns mail off            |
-| `MAIL_URL`       | With `smtp`          | SMTP server, such as `smtps://user:password@smtp.example.com:465`                    |
-| `MAIL_FROM`      | With `smtp` or `ses` | Sender of mails, such as `nest-demo <noreply@example.com>`                           |
-| `AWS_REGION`     | With `ses`           | SES region, such as `eu-central-1`                                                   |
+| Variable             | Required             | Description                                                                          |
+| -------------------- | -------------------- | ------------------------------------------------------------------------------------ |
+| `PORT`               | No                   | API port (default `3000`)                                                            |
+| `LOG_LEVEL`          | No                   | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` (default `info`)      |
+| `LOG_TRANSPORTS`     | No                   | Comma-separated log destinations, see below (default `stdout`)                       |
+| `DB_HOST`            | Yes                  | Postgres host                                                                        |
+| `DB_PORT`            | Yes                  | Postgres port                                                                        |
+| `DB_USERNAME`        | Yes                  | Postgres user                                                                        |
+| `DB_PASSWORD`        | Yes                  | Postgres password                                                                    |
+| `DB_NAME`            | Yes                  | Postgres database                                                                    |
+| `JWT_SECRET`         | Yes                  | Key that signs access tokens, at least 32 characters                                 |
+| `JWT_EXPIRES_IN`     | No                   | Access token lifetime in seconds (default `3600`)                                    |
+| `APP_URL`            | No                   | The app's own URL, which links in mails start with (default `http://localhost:3000`) |
+| `MAIL_MAILER`        | No                   | How mails are sent: `smtp`, `ses` or `log`. Unset or empty turns mail off            |
+| `MAIL_URL`           | With `smtp`          | SMTP server, such as `smtps://user:password@smtp.example.com:465`                    |
+| `MAIL_FROM`          | With `smtp` or `ses` | Sender of mails, such as `nest-demo <noreply@example.com>`                           |
+| `AWS_REGION`         | With `ses` or `sns`  | SES and SNS region, such as `eu-central-1`                                           |
+| `SMS_DRIVER`         | No                   | How texts are sent: `sns`, `twilio` or `log`. Unset or empty turns SMS off           |
+| `SMS_FROM`           | With `twilio`        | Sender of texts: a number, a sender ID, or a Twilio messaging service SID (`MG...`)  |
+| `TWILIO_ACCOUNT_SID` | With `twilio`        | Twilio account SID, `AC...`                                                          |
+| `TWILIO_AUTH_TOKEN`  | With `twilio`        | Twilio auth token                                                                    |
 
 They are validated at startup, and the app exits with an error listing any missing or invalid values.
 
@@ -174,6 +178,7 @@ Removing a name from that file makes the next sync delete the permission and all
 | POST   | `/api/auth/register`            | Public                                         | Create an account                                          |
 | POST   | `/api/auth/login`               | Public                                         | Get an access token                                        |
 | GET    | `/api/auth/me`                  | Any logged-in user                             | Get your roles, permissions and unread notifications count |
+| PATCH  | `/api/auth/me`                  | Any logged-in user                             | Change your `nickname` and `phone`                         |
 | POST   | `/api/auth/verify-email`        | Any logged-in user                             | Confirm your email with the mailed code                    |
 | POST   | `/api/auth/verify-email/resend` | Any logged-in user                             | Mail a new code                                            |
 | POST   | `/api/categories`               | `categories.create`                            | Create a category                                          |
@@ -230,8 +235,9 @@ Modeled on Laravel's notifications. Each kind is a subclass of `Notification` (`
 - `database` stores it in the `notifications` table, for the list and unread count.
 - `broadcast` sends it to the user's open streams.
 - `mail` mails it to the user's email. Not in `via()` by default, as the notification needs a `toMail()`. Left out while mail is off, so notifications that list it are still sent through the others.
+- `sms` texts it to the user's phone, if they have one. Not in `via()` by default, as the notification needs a `toSms()`. Left out while SMS is off, like mail.
 
-The channels run in that order and all use the same id, so a broadcast always names a stored notification, and mail, the slowest, holds up neither. Sending happens in the request, with no queue, after the change it is about has been saved. A failing channel is logged, stops the channels after it, and does not fail the request.
+The channels run in that order and all use the same id, so a broadcast always names a stored notification, and mail and SMS, the slowest, hold up neither. Sending happens in the request, with no queue, after the change it is about has been saved. A failing channel is logged, stops the channels after it, and does not fail the request.
 
 Sent so far, each to the author when someone else acts, and never for the user's own actions:
 
@@ -298,6 +304,33 @@ As mails are sent within the request, a slow mail server slows down the request 
 - **The instance role from inside Docker** needs the instance metadata hop limit raised to 2, as the container is one hop further than IMDSv2 allows by default: `aws ec2 modify-instance-metadata-options --instance-id <id> --http-put-response-hop-limit 2 --http-endpoint enabled`. Without it, sending fails with a credentials error.
 - **The sender** in `MAIL_FROM` has to be an identity verified in SES: its address, or better its domain.
 - **New SES accounts are in the sandbox**: they only mail verified addresses, and a limited number per day, until production access is requested in the SES console.
+
+### SMS
+
+A notification sends texts by listing `sms` in `via()` and returning an `SmsMessage` from `toSms()`, like Laravel's `VonageMessage`:
+
+```ts
+via() {
+  return ['database', 'broadcast', 'sms'];
+}
+
+toSms(user: SmsRecipient) {
+  return new SmsMessage().content(
+    `${this.commenter.nickname} commented on "${this.post.title}".`,
+  );
+}
+```
+
+Texts go to the user's `phone`, which they set with `PATCH /api/auth/me` as `{ "phone": "+4915112345678" }` and remove with `{ "phone": null }`. It is stored in [E.164](https://en.wikipedia.org/wiki/E.164), with spaces, dashes, dots and parentheses dropped, and shown only to the user in `GET /api/auth/me`. It is not confirmed yet, so a user could enter someone else's number. Users without a phone are skipped, so a notification can list `sms` for everyone. As with mail, each user gets their own text, and one that fails does not stop the others.
+
+`SMS_DRIVER` picks how texts are sent:
+
+- `sns` sends them through [Amazon SNS](https://docs.aws.amazon.com/sns/latest/dg/sns-mobile-phone-number-as-subscriber.html) in `AWS_REGION`, as transactional texts, with `SMS_FROM` as the sender ID if set and the country allows one. Credentials are found as for SES, and the IAM role needs `sns:Publish`. New accounts are in the SMS sandbox, which only texts verified numbers until production access is requested. The AWS SDK is loaded only for this driver.
+- `twilio` sends them through [Twilio's Messages API](https://www.twilio.com/docs/messaging/api/message-resource) with `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`, from `SMS_FROM`: a Twilio number, an alphanumeric sender ID, or a messaging service SID (`MG...`). It uses the [twilio](https://www.npmjs.com/package/twilio) SDK, loaded only for this driver, and gives up after 10 seconds. A refused text fails with its Twilio error code, such as 21211 for an invalid number.
+- `log` writes them to the log instead, including the number and text, as in development.
+- Unset or empty turns SMS off: the sms channel is left out, and the app logs so at startup.
+
+Another provider takes a class implementing `SmsTransport` (`src/sms/sms-transport.ts`), a name in `SMS_DRIVERS` and its settings in `src/config/env.validation.ts`, and a case in `SmsSender.createTransport`.
 
 ## Pagination
 

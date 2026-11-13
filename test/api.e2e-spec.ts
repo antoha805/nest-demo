@@ -79,6 +79,7 @@ describe('API (e2e)', () => {
       id: string;
       email: string;
       nickname: string;
+      phone: string | null;
       emailVerifiedAt: string | null;
       roles: string[];
       permissions: string[];
@@ -459,6 +460,30 @@ describe('API (e2e)', () => {
       await expect(currentUser(token)).resolves.toMatchObject({
         email,
         nickname: changed,
+      });
+    });
+
+    it('lets users set and remove their phone', async () => {
+      const { token, nickname } = await register();
+      const me = (body: object) =>
+        withToken(token).patch('/api/auth/me').send(body);
+      await expect(currentUser(token)).resolves.toMatchObject({ phone: null });
+
+      const updated = await me({ phone: '+49 (151) 123-45678' }).expect(200);
+      expect(updated.body).toMatchObject({ nickname, phone: '+4915112345678' });
+      await expect(currentUser(token)).resolves.toMatchObject({
+        nickname,
+        phone: '+4915112345678',
+      });
+
+      await me({ phone: '015112345678' }).expect(400);
+      await me({ phone: '+0123456789' }).expect(400);
+      await me({ phone: 12345678 }).expect(400);
+      await me({ nickname: null }).expect(400);
+      await me({ phone: null }).expect(200);
+      await expect(currentUser(token)).resolves.toMatchObject({
+        nickname,
+        phone: null,
       });
     });
 

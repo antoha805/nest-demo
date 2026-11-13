@@ -161,4 +161,60 @@ describe('validate', () => {
       }),
     ).not.toThrow();
   });
+
+  describe('SMS_DRIVER', () => {
+    it.each([undefined, ''])(
+      'turns SMS off for SMS_DRIVER=%j',
+      (SMS_DRIVER) => {
+        expect(validate({ ...env, SMS_DRIVER }).SMS_DRIVER).toBeUndefined();
+      },
+    );
+
+    it.each(['vonage', 'SNS'])('rejects SMS_DRIVER=%j', (SMS_DRIVER) => {
+      expect(() => validate({ ...env, SMS_DRIVER })).toThrow(/SMS_DRIVER/);
+    });
+
+    it('accepts the log driver without settings', () => {
+      expect(validate({ ...env, SMS_DRIVER: 'log' }).SMS_DRIVER).toBe('log');
+    });
+
+    it('requires AWS_REGION, but not SMS_FROM, with sns', () => {
+      const sns = { ...env, SMS_DRIVER: 'sns' };
+
+      expect(() => validate(sns)).toThrow(/AWS_REGION/);
+      expect(validate({ ...sns, AWS_REGION: 'eu-central-1' })).toMatchObject({
+        SMS_DRIVER: 'sns',
+        AWS_REGION: 'eu-central-1',
+      });
+    });
+
+    describe('with twilio', () => {
+      const twilio = {
+        ...env,
+        SMS_DRIVER: 'twilio',
+        SMS_FROM: '+15005550006',
+        TWILIO_ACCOUNT_SID: `AC${'0'.repeat(32)}`,
+        TWILIO_AUTH_TOKEN: 's3cret',
+      };
+
+      it('accepts the Twilio settings', () => {
+        expect(validate(twilio)).toMatchObject({ SMS_DRIVER: 'twilio' });
+      });
+
+      it.each(['SMS_FROM', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN'])(
+        'requires %s',
+        (name) => {
+          expect(() => validate({ ...twilio, [name]: undefined })).toThrow(
+            new RegExp(name),
+          );
+        },
+      );
+
+      it('rejects an account SID that is not one', () => {
+        expect(() =>
+          validate({ ...twilio, TWILIO_ACCOUNT_SID: 'MG123' }),
+        ).toThrow(/TWILIO_ACCOUNT_SID/);
+      });
+    });
+  });
 });

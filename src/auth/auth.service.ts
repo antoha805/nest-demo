@@ -1,5 +1,9 @@
 import { EntityManager } from '@mikro-orm/postgresql';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcrypt';
 import { User } from '../users/user.entity';
@@ -58,10 +62,17 @@ export class AuthService {
 
   async updateProfile(
     userId: string,
-    { nickname }: UpdateProfileDto,
+    { nickname, phone }: UpdateProfileDto,
   ): Promise<AuthenticatedUser> {
+    // A nickname cannot be removed, so null counts as not given.
+    if (nickname == null && phone === undefined) {
+      throw new BadRequestException('Give a nickname or a phone to change');
+    }
     return toAuthenticatedUser(
-      await this.usersService.setNickname(userId, nickname),
+      await this.usersService.updateProfile(userId, {
+        nickname: nickname ?? undefined,
+        phone,
+      }),
     );
   }
 
