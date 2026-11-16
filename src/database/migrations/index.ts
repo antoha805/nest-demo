@@ -11,6 +11,7 @@ import { Migration20261106150000_AddNotifications } from './Migration20261106150
 import { Migration20261106160000_AddEmailVerification } from './Migration20261106160000_AddEmailVerification';
 import { Migration20261110120000_AddPostSearch } from './Migration20261110120000_AddPostSearch';
 import { Migration20261113120000_AddUserPhone } from './Migration20261113120000_AddUserPhone';
+import { Migration20261116120000_MakeNotificationsPolymorphic } from './Migration20261116120000_MakeNotificationsPolymorphic';
 
 // Run in this order. `npm run migration:create` writes new ones, which then have
 // to be added at the end.
@@ -28,4 +29,5 @@ export const migrations = [
   Migration20261106160000_AddEmailVerification,
   Migration20261110120000_AddPostSearch,
   Migration20261113120000_AddUserPhone,
+  Migration20261116120000_MakeNotificationsPolymorphic,
 ];

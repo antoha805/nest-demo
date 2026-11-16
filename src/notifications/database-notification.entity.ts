@@ -1,32 +1,37 @@
 import type { Opt } from '@mikro-orm/core';
 import {
   Entity,
+  Enum,
   Index,
-  ManyToOne,
   PrimaryKey,
   Property,
 } from '@mikro-orm/decorators/legacy';
-import { User } from '../users/user.entity';
+import { NotifiableType } from './notifiable';
 
 // A notification as stored by the database channel, like Laravel's
 // DatabaseNotification. Clients list these and mark them as read.
+//
+// Polymorphic, like Laravel's: notifiableType and notifiableId point to the
+// record it is for, so notifiableId cannot have a foreign key. Instead, a
+// trigger on each notifiable table deletes the notifications along with it.
 @Entity({ tableName: 'notifications' })
-// Serves the cursor pagination of a user's notifications, and the replay of
-// those a stream missed.
-@Index({ properties: ['userId', 'id'] })
+// Serves the cursor pagination of a notifiable's notifications, the replay of
+// those a stream missed, and the unread counts.
+@Index({ properties: ['notifiableType', 'notifiableId', 'id'] })
 export class DatabaseNotification {
   // Set by NotificationsService, so every channel can name the same notification.
   @PrimaryKey({ type: 'uuid', defaultRaw: 'uuidv7()' })
   id!: string;
 
-  @ManyToOne(() => User, {
-    fieldName: 'userId',
-    mapToPk: true,
-    deleteRule: 'cascade',
-    updateRule: 'no action',
+  @Enum({
+    items: () => NotifiableType,
+    nativeEnumName: 'notifications_notifiabletype_enum',
     hidden: true,
   })
-  userId!: string;
+  notifiableType!: NotifiableType;
+
+  @Property({ type: 'uuid', hidden: true })
+  notifiableId!: string;
 
   // The kind of notification, such as post.commented.
   @Property({ type: 'varchar', length: 100 })

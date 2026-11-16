@@ -1,5 +1,6 @@
-import type {
+import {
   Notifiable,
+  NotifiableType,
   RoutedChannelName,
 } from '../notifications/notifiable';
 import type { PublicUser } from './public-user';
@@ -10,6 +11,8 @@ import type { User } from './user.entity';
 export class NotifiableUser implements Notifiable, PublicUser {
   // The fields of a User it is made from.
   static readonly FIELDS = ['id', 'nickname', 'email', 'phone'] as const;
+
+  readonly notifiableType = NotifiableType.USER;
 
   constructor(
     readonly id: string,

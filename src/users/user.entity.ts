@@ -5,11 +5,20 @@ import {
   ManyToMany,
   PrimaryKey,
   Property,
+  Trigger,
 } from '@mikro-orm/decorators/legacy';
 import { Permission } from '../roles/permission.entity';
 import { Role } from '../roles/role.entity';
 
 @Entity({ tableName: 'users' })
+// Deletes the notifications, as they cannot have a foreign key. Created by a
+// migration, and declared here so the schema diff does not drop it.
+@Trigger({
+  name: 'users_delete_notifications',
+  timing: 'after',
+  events: ['delete'],
+  expression: `CREATE TRIGGER "users_delete_notifications" AFTER DELETE ON "users" FOR EACH ROW EXECUTE FUNCTION "delete_notifications"('user')`,
+})
 export class User {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'uuidv7()' })
   id!: Opt<string>;
@@ -40,7 +49,7 @@ export class User {
   // same query, rather than a query per user. Undefined when not populated.
   @Formula(
     (cols) =>
-      `(SELECT COUNT(*)::int FROM "notifications" WHERE "notifications"."userId" = ${cols.id} AND "notifications"."readAt" IS NULL)`,
+      `(SELECT COUNT(*)::int FROM "notifications" WHERE "notifications"."notifiableType" = 'user' AND "notifications"."notifiableId" = ${cols.id} AND "notifications"."readAt" IS NULL)`,
     { type: 'integer', lazy: true },
   )
   unreadNotificationsCount?: Opt<number>;

@@ -20,6 +20,7 @@ import { Like } from './../src/likes/like.entity';
 import { DatabaseNotification } from './../src/notifications/database-notification.entity';
 import { Mail, Mailer } from './../src/mail/mailer';
 import { MailMessage } from './../src/notifications/messages/mail-message';
+import { NotifiableType } from './../src/notifications/notifiable';
 import {
   Notification as AppNotification,
   NotificationChannelName,
@@ -1773,6 +1774,20 @@ describe('API (e2e)', () => {
           // Not counted unless asked for.
           const plain = await em().findOneOrFail(User, first.id);
           expect(plain.unreadNotificationsCount).toBeUndefined();
+        });
+
+        it('deletes the notifications of a deleted user', async () => {
+          const author = await createAuthoredPost();
+          await http().put(`/api/posts/${author.post.id}/like`).expect(204);
+          const ofAuthor = {
+            notifiableType: NotifiableType.USER,
+            notifiableId: author.id,
+          };
+          expect(await em().count(DatabaseNotification, ofAuthor)).toBe(1);
+
+          await em().nativeDelete(User, { id: author.id });
+
+          expect(await em().count(DatabaseNotification, ofAuthor)).toBe(0);
         });
 
         it('pages notifications newest first', async () => {

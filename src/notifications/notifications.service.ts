@@ -17,6 +17,7 @@ import {
 } from './channels/notification-channel';
 import { SmsChannel } from './channels/sms.channel';
 import { DatabaseNotification } from './database-notification.entity';
+import { NotifiableType } from './notifiable';
 import { Notification, NotificationChannelName } from './notification';
 import {
   BroadcastNotification,
@@ -26,6 +27,12 @@ import {
 // Users by id, or ready-made, such as from a user already loaded.
 export type NotificationRecipients =
   string | NotifiableUser | (string | NotifiableUser)[];
+
+// The notifications of a user, as the notifiable they are for.
+const ofUser = (userId: string) => ({
+  notifiableType: NotifiableType.USER,
+  notifiableId: userId,
+});
 
 // At most this many missed notifications are replayed to a stream, the newest.
 // Clients can list the rest.
@@ -145,7 +152,7 @@ export class NotificationsService {
       ({ before, limit }) =>
         this.em.find(
           DatabaseNotification,
-          { userId, ...(before ? { id: { $lt: before } } : {}) },
+          { ...ofUser(userId), ...(before ? { id: { $lt: before } } : {}) },
           { orderBy: { id: 'desc' }, limit },
         ),
       query,
@@ -168,7 +175,7 @@ export class NotificationsService {
   async markAllAsRead(userId: string): Promise<void> {
     await this.em.nativeUpdate(
       DatabaseNotification,
-      { userId, readAt: null },
+      { ...ofUser(userId), readAt: null },
       { readAt: new Date() },
     );
   }
@@ -228,7 +235,7 @@ export class NotificationsService {
         raw('COUNT(*) FILTER (WHERE "readAt" IS NULL)::int AS "count"'),
         raw('MAX("id"::text) AS "newestId"'),
       ])
-      .where({ userId })
+      .where(ofUser(userId))
       .execute('get', false);
   }
 
@@ -242,7 +249,7 @@ export class NotificationsService {
     }
     const missed = await this.em.find(
       DatabaseNotification,
-      { userId, id: { $gt: lastEventId } },
+      { ...ofUser(userId), id: { $gt: lastEventId } },
       { orderBy: { id: 'desc' }, limit: MAX_REPLAYED },
     );
     // Read ones too: another client of the user may have read them, and this
@@ -262,7 +269,7 @@ export class NotificationsService {
   ): Promise<DatabaseNotification> {
     const notification = await this.em.findOne(DatabaseNotification, {
       id,
-      userId,
+      ...ofUser(userId),
     });
     if (!notification) {
       throw new NotFoundException(`Notification ${id} not found`);

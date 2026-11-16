@@ -236,7 +236,9 @@ Modeled on Laravel's notifications. Each kind is a subclass of `Notification` (`
 - `mail` mails it to the user's email. Not in `via()` by default, as the notification needs a `toMail()`.
 - `sms` texts it to the user's phone, if they have one. Not in `via()` by default, as the notification needs a `toSms()`.
 
-Like Laravel's `$notifiable`, every method gets whom the notification is for: a `Notifiable` (`src/notifications/notifiable.ts`), which has an `id` and gives the address for mail and SMS through `routeNotificationFor()`. Users are wrapped in a `NotifiableUser` (`src/users/notifiable-user.ts`) with their `nickname`, `email` and `phone`, so the `User` entity stays a database model. A notification for other notifiables names their class as its second type parameter.
+Like Laravel's `$notifiable`, every method gets whom the notification is for: a `Notifiable` (`src/notifications/notifiable.ts`), which has a `notifiableType` and an `id` and gives the address for mail and SMS through `routeNotificationFor()`. Users are wrapped in a `NotifiableUser` (`src/users/notifiable-user.ts`) with their `nickname`, `email` and `phone`, so the `User` entity stays a database model. A notification for other notifiables names their class as its second type parameter.
+
+The `notifications` table is polymorphic, like Laravel's `morphs('notifiable')`: `notifiableType` and `notifiableId` point to the record it is for, so `notifiableId` cannot have a foreign key. Instead, as for likes, a trigger on `users` deletes the notifications along with the user. Another kind of notifiable needs a value in `NotifiableType`, a migration adding it to the enum, and such a trigger on its table, declared with `@Trigger` on its entity.
 
 The channels run in that order and all use the same id, so a broadcast always names a stored notification, and mail and SMS, the slowest, hold up neither. Sending happens in the request, with no queue, after the change it is about has been saved. A failing channel is logged, stops the channels after it, and does not fail the request.
 

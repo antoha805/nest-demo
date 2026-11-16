@@ -15,7 +15,8 @@ export class DatabaseChannel implements NotificationChannel {
       DatabaseNotification,
       deliveries.map(({ id, notifiable, notification, createdAt }) => ({
         id,
-        userId: notifiable.id,
+        notifiableType: notifiable.notifiableType,
+        notifiableId: notifiable.id,
         type: notification.type,
         data: notification.toDatabase(notifiable),
         createdAt,
