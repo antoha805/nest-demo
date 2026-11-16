@@ -36,12 +36,6 @@ export class Post {
   @Property({ type: 'datetime', columnType: 'timestamptz', nullable: true })
   publishedAt: Opt<Date> | null = null;
 
-  // Kept in responses for clients that read it.
-  @Property({ type: 'boolean', persist: false })
-  get published(): Opt<boolean> {
-    return this.publishedAt !== null;
-  }
-
   // What PostsService searches, kept up to date by Postgres. Created by a
   // migration, which also creates the text search configuration it uses.
   @Index({ name: 'posts_search_vector_index', type: 'fulltext' })

@@ -181,7 +181,8 @@ describe('API (e2e)', () => {
       .send({ title: 'Title', content: 'Content', categoryId: first.id })
       .expect(201);
     const post = created.body as Post;
-    expect(post).toMatchObject({ published: false, publishedAt: null });
+    expect(post.publishedAt).toBeNull();
+    expect(post).not.toHaveProperty('published');
     expect(post.category.id).toBe(first.id);
 
     await http().delete(`/api/categories/${first.id}`).expect(409);
@@ -196,7 +197,6 @@ describe('API (e2e)', () => {
       })
       .expect(201);
     expect(createdPublished.body).toMatchObject({
-      published: true,
       publishedAt: expect.any(String) as string,
     });
     await http()
@@ -210,7 +210,7 @@ describe('API (e2e)', () => {
     expect(updated.body).toMatchObject({
       title: 'New title',
       content: 'Content',
-      published: false,
+      publishedAt: null,
       categoryId: second.id,
       category: { id: second.id },
     });
@@ -233,7 +233,6 @@ describe('API (e2e)', () => {
     const { publishedAt } = published.body as Post;
     expect(published.body).toMatchObject({
       title: 'New title',
-      published: true,
       publishedAt: expect.any(String) as string,
     });
 
@@ -252,7 +251,7 @@ describe('API (e2e)', () => {
       .patch(`/api/posts/${post.id}`)
       .send({ title: 'Edited' })
       .expect(200);
-    expect(edited.body).toMatchObject({ published: true, publishedAt });
+    expect(edited.body).toMatchObject({ publishedAt });
 
     await http().put('/api/posts/not-a-uuid/publish').expect(400);
     await http().put(`/api/posts/${randomUUID()}/publish`).expect(404);
@@ -1051,7 +1050,7 @@ describe('API (e2e)', () => {
         .patch(url)
         .send({ content: 'Rewritten' })
         .expect(200);
-      expect((edited.body as Post).published).toBe(true);
+      expect((edited.body as Post).publishedAt).not.toBeNull();
       await anonymous().get(url).expect(200);
 
       await withToken(token).delete(url).expect(204);
