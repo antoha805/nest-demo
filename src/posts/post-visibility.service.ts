@@ -19,11 +19,11 @@ export class PostVisibilityService {
 
   visibleWhere(user?: AuthenticatedUser): ObjectQuery<Post> {
     if (!user) {
-      return { published: true };
+      return { publishedAt: { $ne: null } };
     }
     // Publishers have to see drafts in order to review them.
     return this.caslAbilityFactory.createForUser(user).can('publish', Post)
       ? {}
-      : { $or: [{ published: true }, { authorId: user.id }] };
+      : { $or: [{ publishedAt: { $ne: null } }, { authorId: user.id }] };
   }
 }

@@ -21,7 +21,7 @@ export class Category {
   // Lazy, so posts do not count it per row: CategoriesService populates it.
   @Formula(
     (cols) =>
-      `(SELECT COUNT(*)::int FROM "posts" WHERE "posts"."categoryId" = ${cols.id} AND "posts"."published")`,
+      `(SELECT COUNT(*)::int FROM "posts" WHERE "posts"."categoryId" = ${cols.id} AND "posts"."publishedAt" IS NOT NULL)`,
     { type: 'integer', lazy: true },
   )
   postsCount?: number;

@@ -13,6 +13,7 @@ import { Migration20261110120000_AddPostSearch } from './Migration20261110120000
 import { Migration20261113120000_AddUserPhone } from './Migration20261113120000_AddUserPhone';
 import { Migration20261116120000_MakeNotificationsPolymorphic } from './Migration20261116120000_MakeNotificationsPolymorphic';
 import { Migration20261116140000_AddPostAnnouncedAt } from './Migration20261116140000_AddPostAnnouncedAt';
+import { Migration20261117120000_ReplacePostPublishedWithPublishedAt } from './Migration20261117120000_ReplacePostPublishedWithPublishedAt';
 
 // Run in this order. `npm run migration:create` writes new ones, which then have
 // to be added at the end.
@@ -32,4 +33,5 @@ export const migrations = [
   Migration20261113120000_AddUserPhone,
   Migration20261116120000_MakeNotificationsPolymorphic,
   Migration20261116140000_AddPostAnnouncedAt,
+  Migration20261117120000_ReplacePostPublishedWithPublishedAt,
 ];

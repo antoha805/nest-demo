@@ -115,10 +115,11 @@ async function seed() {
         const categoryIds = new Map(savedCategories.map((c) => [c.name, c.id]));
 
         let created = 0;
-        for (const { category, ...post } of posts) {
+        for (const { category, published, ...post } of posts) {
           if (!(await em.count(Post, { title: post.title }))) {
             await em.insert(Post, {
               ...post,
+              publishedAt: published ? new Date() : null,
               category: categoryIds.get(category) as string,
             });
             created++;

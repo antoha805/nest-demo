@@ -119,8 +119,6 @@ describe('API (e2e)', () => {
   // As the admin, unless another user is given.
   const publish = (postId: string, client = http()) =>
     client.put(`/api/posts/${postId}/publish`).expect(204);
-  const unpublish = (postId: string, client = http()) =>
-    client.delete(`/api/posts/${postId}/publish`).expect(204);
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -183,12 +181,12 @@ describe('API (e2e)', () => {
       .send({ title: 'Title', content: 'Content', categoryId: first.id })
       .expect(201);
     const post = created.body as Post;
-    expect(post.published).toBe(false);
+    expect(post).toMatchObject({ published: false, publishedAt: null });
     expect(post.category.id).toBe(first.id);
 
     await http().delete(`/api/categories/${first.id}`).expect(409);
 
-    await http()
+    const createdPublished = await http()
       .post('/api/posts')
       .send({
         title: 'Title',
@@ -196,7 +194,14 @@ describe('API (e2e)', () => {
         categoryId: first.id,
         published: true,
       })
-      .expect(400);
+      .expect(201);
+    expect(createdPublished.body).toMatchObject({
+      published: true,
+      publishedAt: expect.any(String) as string,
+    });
+    await http()
+      .delete(`/api/posts/${(createdPublished.body as Post).id}`)
+      .expect(204);
 
     const updated = await http()
       .patch(`/api/posts/${post.id}`)
@@ -218,27 +223,39 @@ describe('API (e2e)', () => {
 
     await http()
       .patch(`/api/posts/${post.id}`)
-      .send({ published: true })
+      .send({ published: false })
       .expect(400);
 
+    const published = await http()
+      .patch(`/api/posts/${post.id}`)
+      .send({ published: true })
+      .expect(200);
+    const { publishedAt } = published.body as Post;
+    expect(published.body).toMatchObject({
+      title: 'New title',
+      published: true,
+      publishedAt: expect.any(String) as string,
+    });
+
+    // Publishing is final: nothing changes the date, nor makes it a draft.
     await publish(post.id);
-    await publish(post.id);
-    const published = await http().get(`/api/posts/${post.id}`).expect(200);
-    expect(published.body).toMatchObject({ published: true });
-    // Publishing by an admin keeps it published through edits.
+    await http()
+      .patch(`/api/posts/${post.id}`)
+      .send({ published: true })
+      .expect(200);
+    await http()
+      .patch(`/api/posts/${post.id}`)
+      .send({ published: false })
+      .expect(400);
+    await http().delete(`/api/posts/${post.id}/publish`).expect(404);
     const edited = await http()
       .patch(`/api/posts/${post.id}`)
       .send({ title: 'Edited' })
       .expect(200);
-    expect(edited.body).toMatchObject({ published: true });
-
-    await unpublish(post.id);
-    await unpublish(post.id);
-    await anonymous().get(`/api/posts/${post.id}`).expect(404);
+    expect(edited.body).toMatchObject({ published: true, publishedAt });
 
     await http().put('/api/posts/not-a-uuid/publish').expect(400);
     await http().put(`/api/posts/${randomUUID()}/publish`).expect(404);
-    await http().delete(`/api/posts/${randomUUID()}/publish`).expect(404);
     await anonymous().put(`/api/posts/${post.id}/publish`).expect(401);
 
     await http().delete(`/api/posts/${post.id}`).expect(204);
@@ -296,16 +313,12 @@ describe('API (e2e)', () => {
       fields: { title: string; content: string; published?: boolean },
       token = adminToken,
     ) => {
-      const { published = true, ...rest } = fields;
       const response = await withToken(token)
         .post('/api/posts')
-        .send({ ...rest, categoryId })
+        .send({ published: true, ...fields, categoryId })
         .expect(201);
       const { id } = response.body as Post;
       postIds.push(id);
-      if (published) {
-        await publish(id);
-      }
       return id;
     };
 
@@ -921,8 +934,7 @@ describe('API (e2e)', () => {
       await client().patch(url).send({ title: 'X' }).expect(403);
       await client().put(`${url}/publish`).expect(204);
       await anonymous().get(url).expect(200);
-      await client().delete(`${url}/publish`).expect(204);
-      await anonymous().get(url).expect(404);
+      await client().put(`${url}/publish`).expect(204);
 
       await http().delete(url).expect(204);
       await http().delete(`/api/categories/${category.id}`).expect(204);
@@ -939,7 +951,12 @@ describe('API (e2e)', () => {
         .send({ roles: ['editor'] })
         .expect(200);
       const category = await createCategory();
-      const body = { title: 'T', content: 'C', categoryId: category.id };
+      const body = {
+        title: 'T',
+        content: 'C',
+        published: true,
+        categoryId: category.id,
+      };
 
       await withToken(token)
         .post('/api/posts')
@@ -952,7 +969,6 @@ describe('API (e2e)', () => {
         .expect(201);
       const post = created.body as Post;
       expect(post.authorId).toBe(authorId);
-      await publish(post.id, withToken(token));
 
       await http()
         .patch(`/api/posts/${post.id}`)
@@ -985,6 +1001,10 @@ describe('API (e2e)', () => {
       const category = await createCategory();
       const body = { title: 'T', content: 'C', categoryId: category.id };
 
+      await withToken(token)
+        .post('/api/posts')
+        .send({ ...body, published: true })
+        .expect(403);
       const created = await withToken(token)
         .post('/api/posts')
         .send(body)
@@ -1019,19 +1039,20 @@ describe('API (e2e)', () => {
       await withToken(otherToken).delete(url).expect(403);
       await withToken(token).put(`${url}/publish`).expect(403);
       await withToken(otherToken).put(`${url}/publish`).expect(403);
+      await withToken(token).patch(url).send({ published: true }).expect(403);
       await withToken(token).patch(url).send({ title: 'Mine' }).expect(200);
 
       await publish(id);
       await anonymous().get(url).expect(200);
-      await withToken(token).delete(`${url}/publish`).expect(403);
       await expect(isListed(anonymous())).resolves.toBe(true);
 
+      // Publishing is final, even when the author edits it afterwards.
       const edited = await withToken(token)
         .patch(url)
         .send({ content: 'Rewritten' })
         .expect(200);
-      expect((edited.body as Post).published).toBe(false);
-      await anonymous().get(url).expect(404);
+      expect((edited.body as Post).published).toBe(true);
+      await anonymous().get(url).expect(200);
 
       await withToken(token).delete(url).expect(204);
       await http().delete(`/api/categories/${category.id}`).expect(204);
@@ -1042,13 +1063,14 @@ describe('API (e2e)', () => {
         const category = await createCategory();
         const created = await withToken(token)
           .post('/api/posts')
-          .send({ title: 'T', content: 'C', categoryId: category.id })
+          .send({
+            title: 'T',
+            content: 'C',
+            categoryId: category.id,
+            published,
+          })
           .expect(201);
-        const post = created.body as Post;
-        if (published) {
-          await publish(post.id);
-        }
-        return post;
+        return created.body as Post;
       };
 
       const createComment = async (token: string, postId: string) => {
@@ -1221,8 +1243,6 @@ describe('API (e2e)', () => {
       it('hides comments and likes of posts the user cannot read', async () => {
         const { token: authorToken } = await register();
         const { token: otherToken } = await register();
-        const post = await createPost(adminToken, true);
-        const comment = await createComment(authorToken, post.id);
         const draft = await createPost(authorToken);
         const postUrl = `/api/posts/${draft.id}`;
 
@@ -1234,15 +1254,14 @@ describe('API (e2e)', () => {
           .expect(404);
         await withToken(otherToken).put(`${postUrl}/like`).expect(404);
 
-        await createComment(authorToken, draft.id);
+        const comment = await createComment(authorToken, draft.id);
         await withToken(authorToken).put(`${postUrl}/like`).expect(204);
         await withToken(authorToken).get(`${postUrl}/comments`).expect(200);
 
-        await unpublish(post.id);
         const commentUrl = `/api/comments/${comment.id}`;
         await withToken(otherToken).put(`${commentUrl}/like`).expect(404);
         await withToken(otherToken).delete(commentUrl).expect(404);
-        await withToken(authorToken)
+        await withToken(otherToken)
           .patch(commentUrl)
           .send({ content: 'X' })
           .expect(404);
@@ -1922,19 +1941,37 @@ describe('API (e2e)', () => {
             expect(await sendJobs(fanOut)).toHaveLength(queued);
           });
 
+          it('announces posts published when created or edited', async () => {
+            const created = await createPost(adminToken, true);
+            await announcement(created.id);
+
+            const draft = await createPost(adminToken);
+            expect(
+              await queue().getJob(`post-published-${draft.id}`),
+            ).toBeUndefined();
+            await http()
+              .patch(`/api/posts/${draft.id}`)
+              .send({ published: true })
+              .expect(200);
+            await announcement(draft.id);
+          });
+
           it('announces a post once, even when published again', async () => {
             const author = await createAuthoredPost();
             const fanOut = await announcement(author.post.id);
             const post = () =>
               em().findOneOrFail(Post, author.post.id, {
-                fields: ['announcedAt'],
+                fields: ['publishedAt'],
               });
-            const { announcedAt } = await post();
+            const { publishedAt } = await post();
 
-            await unpublish(author.post.id);
             await publish(author.post.id);
+            await http()
+              .patch(`/api/posts/${author.post.id}`)
+              .send({ published: true })
+              .expect(200);
 
-            expect((await post()).announcedAt).toEqual(announcedAt);
+            expect((await post()).publishedAt).toEqual(publishedAt);
             expect((await announcement(author.post.id)).timestamp).toBe(
               fanOut.timestamp,
             );

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -34,6 +35,7 @@ export class PostsController {
   @Post()
   @CheckPolicies((ability) => ability.can('create', PostEntity))
   create(@Body() dto: CreatePostDto, @CurrentUser() user: AuthenticatedUser) {
+    this.assertCanPublish(dto, user);
     return this.postsService.create(dto, user.id);
   }
 
@@ -62,10 +64,8 @@ export class PostsController {
     @Body() dto: UpdatePostDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.postsService.update(id, dto, {
-      keepPublished: this.canPublish(user),
-      userId: user.id,
-    });
+    this.assertCanPublish(dto, user);
+    return this.postsService.update(id, dto, user.id);
   }
 
   @Delete(':id')
@@ -75,20 +75,13 @@ export class PostsController {
     return this.postsService.remove(id);
   }
 
-  // An action of its own rather than a field of the post, so it needs
-  // posts.publish alone, not the right to edit the post too.
+  // Needs posts.publish alone, not the right to edit the post too, so
+  // reviewers can publish posts they cannot change. Publishing is final.
   @Put(':id/publish')
   @PostAccess('publish')
   @HttpCode(HttpStatus.NO_CONTENT)
   publish(@Param('id', ParseUUIDPipe) id: string) {
     return this.postsService.publish(id);
-  }
-
-  @Delete(':id/publish')
-  @PostAccess('publish')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  unpublish(@Param('id', ParseUUIDPipe) id: string) {
-    return this.postsService.unpublish(id);
   }
 
   @Put(':id/like')
@@ -111,9 +104,16 @@ export class PostsController {
     return this.postsService.unlike(id, user);
   }
 
-  private canPublish(user: AuthenticatedUser): boolean {
-    return this.caslAbilityFactory
-      .createForUser(user)
-      .can('publish', PostEntity);
+  // For publishing through `published` when creating or editing a post.
+  private assertCanPublish(
+    { published }: { published?: boolean },
+    user: AuthenticatedUser,
+  ): void {
+    if (
+      published &&
+      !this.caslAbilityFactory.createForUser(user).can('publish', PostEntity)
+    ) {
+      throw new ForbiddenException('You cannot publish posts');
+    }
   }
 }

@@ -74,7 +74,7 @@ export class PostsService {
   ) {}
 
   async create(
-    { categoryId, ...dto }: CreatePostDto,
+    { categoryId, published, ...dto }: CreatePostDto,
     authorId: string,
   ): Promise<Post> {
     await this.assertCategoryExists(categoryId);
@@ -84,6 +84,9 @@ export class PostsService {
       authorId,
     });
     await this.em.flush();
+    if (published) {
+      await this.publishOnce(post);
+    }
     return this.findOneForUser({ id: post.id }, authorId);
   }
 
@@ -136,14 +139,8 @@ export class PostsService {
 
   async update(
     id: string,
-    { categoryId, ...dto }: UpdatePostDto,
-    {
-      keepPublished,
-      userId,
-    }: {
-      keepPublished: boolean;
-      userId: string;
-    },
+    { categoryId, published, ...dto }: UpdatePostDto,
+    userId: string,
   ): Promise<Post> {
     if (categoryId) {
       await this.assertCategoryExists(categoryId);
@@ -156,36 +153,29 @@ export class PostsService {
     if (categoryId) {
       post.category = this.em.getReference(Category, categoryId);
     }
-    // Otherwise an approved post could be rewritten without review.
-    if (!keepPublished) {
-      post.published = false;
-    }
     await this.em.flush();
+    if (published) {
+      await this.publishOnce(post);
+    }
     return this.findOneForUser({ id }, userId);
   }
 
-  // Idempotent. Only the first publishing announces the post.
+  // Idempotent: publishing a published post does nothing.
   async publish(id: string): Promise<void> {
-    const post = await this.findOne(id);
-    if (post.published) {
-      return;
-    }
-    post.published = true;
-    // Saved with the change, so a post is announced once.
-    const announce = !post.announcedAt;
-    if (announce) {
-      post.announcedAt = new Date();
-    }
-    await this.em.flush();
-    if (announce) {
-      await this.announce(post);
-    }
+    await this.publishOnce(await this.findOne(id));
   }
 
-  async unpublish(id: string): Promise<void> {
-    const post = await this.findOne(id);
-    post.published = false;
-    await this.em.flush();
+  // Publishing is final. The update only matches a draft, so of concurrent
+  // requests only one publishes the post and announces it.
+  private async publishOnce(post: Post): Promise<void> {
+    const published = await this.em.nativeUpdate(
+      Post,
+      { id: post.id, publishedAt: null },
+      { publishedAt: new Date() },
+    );
+    if (published) {
+      await this.announce(post);
+    }
   }
 
   async remove(id: string): Promise<void> {

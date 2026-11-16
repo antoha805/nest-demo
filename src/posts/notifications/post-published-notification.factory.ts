@@ -21,7 +21,7 @@ export class PostPublishedNotificationFactory implements OnModuleInit {
     );
   }
 
-  // Null once the post has been deleted or unpublished, so it is not
+  // Null once the post has been deleted, so it is not
   // announced any more.
   async make({
     postId,
@@ -31,7 +31,7 @@ export class PostPublishedNotificationFactory implements OnModuleInit {
     const em = this.em.fork();
     const post = await em.findOne(
       Post,
-      { id: postId, published: true },
+      { id: postId, publishedAt: { $ne: null } },
       { fields: ['id', 'title', 'authorId'] },
     );
     if (!post) {

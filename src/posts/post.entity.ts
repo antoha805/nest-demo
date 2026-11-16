@@ -31,18 +31,16 @@ export class Post {
   @Property({ type: 'text' })
   content!: string;
 
-  @Property({ type: 'boolean', default: false })
-  published: Opt<boolean> = false;
+  // Null for drafts. Publishing is final, so this is set once, and the post is
+  // announced to every other user then.
+  @Property({ type: 'datetime', columnType: 'timestamptz', nullable: true })
+  publishedAt: Opt<Date> | null = null;
 
-  // When every other user was told about it, on its first publishing. Kept
-  // when it is unpublished, so publishing it again tells nobody.
-  @Property({
-    type: 'datetime',
-    columnType: 'timestamptz',
-    nullable: true,
-    hidden: true,
-  })
-  announcedAt: Opt<Date> | null = null;
+  // Kept in responses for clients that read it.
+  @Property({ type: 'boolean', persist: false })
+  get published(): Opt<boolean> {
+    return this.publishedAt !== null;
+  }
 
   // What PostsService searches, kept up to date by Postgres. Created by a
   // migration, which also creates the text search configuration it uses.
