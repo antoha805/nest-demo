@@ -3,3 +3,5 @@ process.env.DB_NAME = 'nest_demo_test';
 process.env.JWT_SECRET = 'e2e-secret-e2e-secret-e2e-secret-e2e';
 process.env.APP_URL = 'http://app.test';
 process.env.MAIL_MAILER = 'log';
+// Keeps the test run's jobs apart from the app's.
+process.env.QUEUE_PREFIX = 'e2e';

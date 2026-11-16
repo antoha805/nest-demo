@@ -3,8 +3,10 @@ import { Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { RequestContext } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
+import { getQueueToken } from '@nestjs/bullmq';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Job, Queue } from 'bullmq';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
@@ -27,6 +29,12 @@ import {
 } from './../src/notifications/notification';
 import { NotificationBroadcaster } from './../src/notifications/notification-broadcaster';
 import { NotificationsService } from './../src/notifications/notifications.service';
+import {
+  FAN_OUT_JOB,
+  NOTIFICATIONS_QUEUE,
+  SendJobData,
+} from './../src/notifications/queue/notification-queue';
+import { NotificationsProcessor } from './../src/notifications/queue/notifications.processor';
 import { Post } from './../src/posts/post.entity';
 import {
   ADMIN_ROLE,
@@ -116,6 +124,9 @@ describe('API (e2e)', () => {
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api');
     await app.init();
+    // Jobs run only when a test runs them, so publishing posts does not notify
+    // the users of other tests meanwhile.
+    await app.get(NotificationsProcessor).worker.pause(true);
 
     const { token } = await register();
     const { id } = await currentUser(token);
@@ -1774,6 +1785,116 @@ describe('API (e2e)', () => {
           // Not counted unless asked for.
           const plain = await em().findOneOrFail(User, first.id);
           expect(plain.unreadNotificationsCount).toBeUndefined();
+        });
+
+        describe('announcing published posts', () => {
+          const queue = () =>
+            app.get<Queue>(getQueueToken(NOTIFICATIONS_QUEUE));
+          const run = (job: Job) =>
+            app.get(NotificationsProcessor).process(job);
+
+          const announcement = async (postId: string) => {
+            const job = await queue().getJob(`post-published-${postId}`);
+            expect(job?.name).toBe(FAN_OUT_JOB);
+            return job!;
+          };
+          // The send jobs a fan-out job queued, with the users of each.
+          const sendJobs = async (fanOut: Job) => {
+            const jobs = await queue().getJobs(['waiting']);
+            return jobs.filter(({ id }) => id?.startsWith(`${fanOut.id}-`));
+          };
+          const userIdsOf = (jobs: Job[]) =>
+            jobs.flatMap((job) => (job.data as SendJobData).userIds);
+
+          const registerWithId = async () => {
+            const user = await register();
+            return { ...user, id: (await currentUser(user.token)).id };
+          };
+
+          it('tells every other user, in chunks queued by a fan-out job', async () => {
+            const reader = await registerWithId();
+            const author = await createAuthoredPost();
+            const late = await registerWithId();
+
+            const fanOut = await announcement(author.post.id);
+            await run(fanOut);
+            const jobs = await sendJobs(fanOut);
+            const userIds = userIdsOf(jobs);
+
+            expect(userIds).toContain(reader.id);
+            expect(userIds).toContain((await currentUser(adminToken)).id);
+            // Not the author, nor users who joined after it was published.
+            expect(userIds).not.toContain(author.id);
+            expect(userIds).not.toContain(late.id);
+            expect(new Set(userIds).size).toBe(userIds.length);
+
+            await run(
+              jobs.find((job) =>
+                (job.data as SendJobData).userIds.includes(reader.id),
+              )!,
+            );
+            const { data } = await listNotifications(reader.token);
+            expect(data).toEqual([
+              expect.objectContaining({
+                type: 'post.published',
+                data: {
+                  postId: author.post.id,
+                  postTitle: author.post.title,
+                  author: { id: author.id, nickname: author.nickname },
+                },
+              }),
+            ]);
+          });
+
+          it('carries on after the last chunk it queued when retried', async () => {
+            const author = await createAuthoredPost();
+            const fanOut = await announcement(author.post.id);
+            await run(fanOut);
+            const queued = (await sendJobs(fanOut)).length;
+
+            // As a retry finds it: the cursor is past every user.
+            await run(fanOut);
+
+            expect(await sendJobs(fanOut)).toHaveLength(queued);
+          });
+
+          it('announces a post once, even when published again', async () => {
+            const author = await createAuthoredPost();
+            const fanOut = await announcement(author.post.id);
+            const post = () =>
+              em().findOneOrFail(Post, author.post.id, {
+                fields: ['announcedAt'],
+              });
+            const { announcedAt } = await post();
+
+            for (const published of [false, true]) {
+              await http()
+                .patch(`/api/posts/${author.post.id}`)
+                .send({ published })
+                .expect(200);
+            }
+
+            expect((await post()).announcedAt).toEqual(announcedAt);
+            expect((await announcement(author.post.id)).timestamp).toBe(
+              fanOut.timestamp,
+            );
+          });
+
+          it('sends nothing for a post deleted before its chunk runs', async () => {
+            const reader = await registerWithId();
+            const author = await createAuthoredPost();
+            const fanOut = await announcement(author.post.id);
+            await run(fanOut);
+            await http().delete(`/api/posts/${author.post.id}`).expect(204);
+
+            for (const job of await sendJobs(fanOut)) {
+              if ((job.data as SendJobData).userIds.includes(reader.id)) {
+                await run(job);
+              }
+            }
+
+            expect((await listNotifications(reader.token)).data).toEqual([]);
+          });
         });
 
         it('deletes the notifications of a deleted user', async () => {

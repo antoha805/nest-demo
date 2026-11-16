@@ -4,6 +4,8 @@ x-api: &api
   environment: &api-environment
     DB_HOST: postgres
     DB_PORT: 5432
+    REDIS_HOST: redis
+    REDIS_PORT: 6379
     LOG_TRANSPORTS: stdout
   logging: &logging
     driver: json-file
@@ -33,6 +35,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
   caddy:
     image: caddy:2-alpine
@@ -66,7 +70,24 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    mem_limit: 96m
+    # Saved to disk, so queued jobs survive a restart, and never evicting, as
+    # that would lose a job.
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    logging: *logging
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:
+  redis_data:
   caddy_data:
   caddy_config:

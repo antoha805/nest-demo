@@ -10,6 +10,7 @@ import { EntityManager } from '@mikro-orm/postgresql';
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { AuthenticatedUser } from '../auth/authenticated-user';
@@ -24,10 +25,12 @@ import { paginate, Paginated } from '../common/paginated';
 import { LikeableType } from '../likes/like.entity';
 import { LikesService } from '../likes/likes.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationQueue } from '../notifications/queue/notification-queue';
 import { CreatePostDto } from './dto/create-post.dto';
 import { FindPostsQueryDto } from './dto/find-posts-query.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { PostLikedNotification } from './notifications/post-liked.notification';
+import { PostPublishedNotification } from './notifications/post-published.notification';
 import { PostVisibilityService } from './post-visibility.service';
 import { Post } from './post.entity';
 
@@ -58,6 +61,8 @@ export type PostWithComments = EntityDTO<Post> & {
 
 @Injectable()
 export class PostsService {
+  private readonly logger = new Logger(PostsService.name);
+
   constructor(
     private readonly em: EntityManager,
     private readonly categoriesService: CategoriesService,
@@ -65,6 +70,7 @@ export class PostsService {
     private readonly likesService: LikesService,
     private readonly commentsService: CommentsService,
     private readonly notificationsService: NotificationsService,
+    private readonly notificationQueue: NotificationQueue,
   ) {}
 
   async create(
@@ -72,14 +78,19 @@ export class PostsService {
     authorId: string,
   ): Promise<Post> {
     await this.assertCategoryExists(categoryId);
+    const published = dto.published ?? false;
     const post = this.em.create(Post, {
       title: dto.title,
       content: dto.content,
-      published: dto.published ?? false,
+      published,
+      announcedAt: published ? new Date() : null,
       category: categoryId,
       authorId,
     });
     await this.em.flush();
+    if (published) {
+      await this.announce(post);
+    }
     return this.findOneForUser({ id: post.id }, authorId);
   }
 
@@ -156,7 +167,15 @@ export class PostsService {
     if (!keepPublished) {
       post.published = false;
     }
+    // Saved with the change, so a post is announced once.
+    const announce = post.published && !post.announcedAt;
+    if (announce) {
+      post.announcedAt = new Date();
+    }
     await this.em.flush();
+    if (announce) {
+      await this.announce(post);
+    }
     return this.findOneForUser({ id }, userId);
   }
 
@@ -182,6 +201,26 @@ export class PostsService {
   async unlike(id: string, user: AuthenticatedUser): Promise<void> {
     await this.postVisibilityService.findVisible(id, user);
     await this.likesService.unlike(LikeableType.POST, id, user.id);
+  }
+
+  // Tells every other user about a newly published post. Queued, so the
+  // request does not wait for it, and a failure is logged rather than failing
+  // the request, which has saved the post.
+  private async announce(post: Post): Promise<void> {
+    try {
+      await this.notificationQueue.sendToAllUsers(
+        PostPublishedNotification.queued(post.id),
+        {
+          except: post.authorId ? [post.authorId] : [],
+          jobId: `post-published-${post.id}`,
+        },
+      );
+    } catch (error: unknown) {
+      this.logger.error(
+        { err: error, postId: post.id },
+        'Failed to queue the announcement of a post',
+      );
+    }
   }
 
   private async findOneForUser(

@@ -17,13 +17,13 @@ In a second terminal, add the sample data:
 docker compose exec api npm run seed
 ```
 
-The API is served at `http://localhost:3000/api` and reloads when files in `src` change. Postgres is exposed on host port `5433`.
+The API is served at `http://localhost:3000/api` and reloads when files in `src` change. Postgres is exposed on host port `5433`, and Redis on `6380`.
 
-To run the API on the host instead, start only the database:
+To run the API on the host instead, start only the database and Redis:
 
 ```bash
 npm install
-docker compose up -d --wait postgres
+docker compose up -d --wait postgres redis
 npm run migration:run
 npm run permissions:sync
 npm run seed
@@ -113,6 +113,9 @@ Settings are read from environment variables and `.env`; see `.env.example`. Rea
 | `DB_USERNAME`        | Yes                  | Postgres user                                                                        |
 | `DB_PASSWORD`        | Yes                  | Postgres password                                                                    |
 | `DB_NAME`            | Yes                  | Postgres database                                                                    |
+| `REDIS_HOST`         | Yes                  | Redis host, for the queues                                                           |
+| `REDIS_PORT`         | No                   | Redis port (default `6379`)                                                          |
+| `QUEUE_PREFIX`       | No                   | Start of the queues' Redis keys (default `bull`)                                     |
 | `JWT_SECRET`         | Yes                  | Key that signs access tokens, at least 32 characters                                 |
 | `JWT_EXPIRES_IN`     | No                   | Access token lifetime in seconds (default `3600`)                                    |
 | `APP_URL`            | No                   | The app's own URL, which links in mails start with (default `http://localhost:3000`) |
@@ -269,7 +272,19 @@ It sends `Last-Event-ID` when it reconnects, and the stream first replays the no
 
 For a notification badge, `GET /api/auth/me` returns `unreadNotificationsCount`. Each time the stream opens, after the replay, it also sends an `unread-count` event, as `{ "count": 3 }`: set the badge to it, add one for each `notification` event after it, and subtract one for each notification marked as read. So the badge is right again after every reconnection, including for notifications read on another device. Its `id` is the newest notification's, which the count includes, so a reconnection resumes after it.
 
-The streams are kept in memory, which works while a single instance of the app runs. Running more would need them shared, such as through Postgres `LISTEN/NOTIFY`.
+The streams are kept in memory, which works while a single instance of the app runs. Running more would need them shared, such as through Redis pub/sub.
+
+### Queued notifications
+
+Notifications for many users are sent by a [BullMQ](https://docs.bullmq.io/) queue on Redis rather than in the request. The `api` process runs its worker. When a post is first published, every user but its author gets a `post.published` notification, through `database` and `broadcast`:
+
+1. `PostsService` sets the post's `announcedAt` when it saves it as published, so publishing it again after unpublishing it announces nothing. It then queues a fan-out job, `NotificationQueue.sendToAllUsers()`, with the newest user's id, so users who join later are left out. The job id, `post-published-<postId>`, keeps it to one job.
+2. The fan-out job pages through the users by id, 500 at a time, and queues a send job for each page. It pages with a cursor rather than an offset, so users deleted meanwhile do not shift the pages: the cursor is a value, which needs no row of its own. It keeps the cursor with its job, so a retry carries on after the last page it queued, and a send job's id names its first user, so one queued twice is ignored.
+3. Each send job makes the notification again and passes its users to `NotificationsService.send`, which loads them in one query, skips those deleted since, and stores their notifications in one statement. A post deleted or unpublished meanwhile is not announced any more.
+
+A queued job holds a notification as its type and data, such as `{ postId }`, like Laravel stores the models of a queued notification by id. The module that owns a queueable notification registers a factory for its type with `QueuedNotifications`, which makes it again when the job runs, so it shows the records as they are then. See `PostPublishedNotificationFactory`.
+
+Jobs are tried 3 times, waiting longer each time. Finished jobs are kept for a day and failed ones for a week. Redis saves its data to disk and never evicts keys, so queued jobs survive a restart. If Redis is down when a post is published, the post is saved and the failure logged, but nobody is told about the post.
 
 ### Mail
 

@@ -1,8 +1,10 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_PIPE } from '@nestjs/core';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { PostgreSqlDriver } from '@mikro-orm/postgresql';
+import { RedisOptions } from 'bullmq';
 import { randomUUID } from 'node:crypto';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
@@ -44,6 +46,23 @@ import { PostsModule } from './posts/posts.module';
           DB_PASSWORD: config.get('DB_PASSWORD', { infer: true }),
           DB_NAME: config.get('DB_NAME', { infer: true }),
         }),
+    }),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
+        connection: {
+          host: config.get('REDIS_HOST', { infer: true }),
+          port: config.get('REDIS_PORT', { infer: true }),
+        } satisfies RedisOptions,
+        prefix: config.get('QUEUE_PREFIX', { infer: true }),
+        defaultJobOptions: {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 5_000 },
+          // Kept a while, to look into, and so a job id stays taken meanwhile.
+          removeOnComplete: { age: 24 * 3600, count: 1000 },
+          removeOnFail: { age: 7 * 24 * 3600 },
+        },
+      }),
     }),
     AuthModule,
     CategoriesModule,

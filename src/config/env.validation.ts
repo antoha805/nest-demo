@@ -71,6 +71,22 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   DB_NAME: string;
 
+  // The Redis that holds the queues.
+  @IsString()
+  @IsNotEmpty()
+  REDIS_HOST: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  REDIS_PORT: number = 6379;
+
+  // Starts the queues' keys, so test runs can share a Redis with the app.
+  @IsString()
+  @IsNotEmpty()
+  QUEUE_PREFIX: string = 'bull';
+
   @IsString()
   @MinLength(32)
   JWT_SECRET: string;

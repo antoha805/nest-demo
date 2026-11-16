@@ -4,6 +4,7 @@ import { CategoriesModule } from '../categories/categories.module';
 import { CommentsModule } from '../comments/comments.module';
 import { LikesModule } from '../likes/likes.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PostPublishedNotificationFactory } from './notifications/post-published-notification.factory';
 import { PostVisibilityModule } from './post-visibility.module';
 import { PostsController } from './posts.controller';
 import { PostsService } from './posts.service';
@@ -18,6 +19,6 @@ import { PostsService } from './posts.service';
     PostVisibilityModule,
   ],
   controllers: [PostsController],
-  providers: [PostsService],
+  providers: [PostsService, PostPublishedNotificationFactory],
 })
 export class PostsModule {}

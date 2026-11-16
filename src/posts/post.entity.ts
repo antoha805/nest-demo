@@ -34,6 +34,16 @@ export class Post {
   @Property({ type: 'boolean', default: false })
   published: Opt<boolean> = false;
 
+  // When every other user was told about it, on its first publishing. Kept
+  // when it is unpublished, so publishing it again tells nobody.
+  @Property({
+    type: 'datetime',
+    columnType: 'timestamptz',
+    nullable: true,
+    hidden: true,
+  })
+  announcedAt: Opt<Date> | null = null;
+
   // What PostsService searches, kept up to date by Postgres. Created by a
   // migration, which also creates the text search configuration it uses.
   @Index({ name: 'posts_search_vector_index', type: 'fulltext' })

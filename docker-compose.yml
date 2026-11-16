@@ -8,12 +8,16 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
       - '${PORT:-3000}:${PORT:-3000}'
     volumes:
       - ./logs:/app/logs
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     develop:
       watch:
@@ -40,5 +44,21 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    # Queues need every key kept: evicting one would lose a job.
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
+    ports:
+      - '${REDIS_PORT:-6380}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:
+  redis_data:

@@ -2,18 +2,21 @@
 import './jest-e2e.setup';
 import { existsSync } from 'node:fs';
 import { MikroORM } from '@mikro-orm/postgresql';
+import { Queue } from 'bullmq';
 import 'reflect-metadata';
 import { validate } from './../src/config/env.validation';
 import { migrate } from './../src/database/migrate';
 import { createOrmConfig } from './../src/database/mikro-orm.config';
 import { syncPermissions } from './../src/database/sync-permissions';
+import { NOTIFICATIONS_QUEUE } from './../src/notifications/queue/notification-queue';
 
 export default async function globalSetup() {
   // Does not override the variables jest-e2e.setup has set.
   if (existsSync('.env')) {
     process.loadEnvFile();
   }
-  const config = createOrmConfig(validate(process.env));
+  const env = validate(process.env);
+  const config = createOrmConfig(env);
   const database = `"${config.dbName}"`;
 
   const admin = await MikroORM.init({ ...config, dbName: 'postgres' });
@@ -36,5 +39,16 @@ export default async function globalSetup() {
     await orm.em.fork().transactional(syncPermissions);
   } finally {
     await orm.close();
+  }
+
+  // Drops the jobs of earlier runs, which the tests would otherwise find.
+  const queue = new Queue(NOTIFICATIONS_QUEUE, {
+    connection: { host: env.REDIS_HOST, port: env.REDIS_PORT },
+    prefix: env.QUEUE_PREFIX,
+  });
+  try {
+    await queue.obliterate({ force: true });
+  } finally {
+    await queue.close();
   }
 }

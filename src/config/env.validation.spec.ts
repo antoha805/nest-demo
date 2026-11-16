@@ -8,6 +8,7 @@ describe('validate', () => {
     DB_USERNAME: 'postgres',
     DB_PASSWORD: 's3cret',
     DB_NAME: 'nest_demo',
+    REDIS_HOST: 'localhost',
     JWT_SECRET: 'a'.repeat(32),
   };
 

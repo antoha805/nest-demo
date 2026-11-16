@@ -1,3 +1,4 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { MailModule } from '../mail/mail.module';
 import { SmsModule } from '../sms/sms.module';
@@ -8,9 +9,19 @@ import { SmsChannel } from './channels/sms.channel';
 import { NotificationBroadcaster } from './notification-broadcaster';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
+import {
+  NOTIFICATIONS_QUEUE,
+  NotificationQueue,
+} from './queue/notification-queue';
+import { NotificationsProcessor } from './queue/notifications.processor';
+import { QueuedNotifications } from './queue/queued-notifications';
 
 @Module({
-  imports: [MailModule, SmsModule],
+  imports: [
+    MailModule,
+    SmsModule,
+    BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE }),
+  ],
   controllers: [NotificationsController],
   providers: [
     NotificationsService,
@@ -19,7 +30,10 @@ import { NotificationsService } from './notifications.service';
     BroadcastChannel,
     MailChannel,
     SmsChannel,
+    NotificationQueue,
+    NotificationsProcessor,
+    QueuedNotifications,
   ],
-  exports: [NotificationsService],
+  exports: [NotificationsService, NotificationQueue, QueuedNotifications],
 })
 export class NotificationsModule {}
