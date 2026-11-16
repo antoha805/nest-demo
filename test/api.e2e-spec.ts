@@ -54,22 +54,35 @@ describe('API (e2e)', () => {
   // Each use gets its own identity map, like a request does.
   const em = () => app.get(EntityManager).fork();
 
+  // Marks a user's email as confirmed without the mailed code.
+  const confirmEmail = async (email: string) => {
+    const manager = em();
+    const { id } = await manager.findOneOrFail(User, { email });
+    await manager.nativeUpdate(User, { id }, { emailVerifiedAt: new Date() });
+    await manager.nativeDelete(EmailVerification, { userId: id });
+  };
+
   // Skips the controller, as tests create more users than its rate limit allows.
-  // Confirmed by default, as most tests need users who can write: registered
-  // as with mail off, which confirms them without mailing a code.
+  // Confirmed by default, as most tests need users who can write: then no
+  // code is mailed, so tests that count mails see only their own.
   const register = async ({ verified = true } = {}) => {
     const email = `${uniqueName()}@example.com`;
     const nickname = uniqueNickname();
-    const mailOff = verified
-      ? jest.spyOn(app.get(Mailer), 'enabled', 'get').mockReturnValue(false)
+    const noCode = verified
+      ? jest
+          .spyOn(app.get(EmailVerificationService), 'start')
+          .mockResolvedValue(undefined)
       : null;
     try {
       const { accessToken } = await RequestContext.create(em(), () =>
         app.get(AuthService).register({ email, nickname, password }),
       );
+      if (verified) {
+        await confirmEmail(email);
+      }
       return { email, nickname, token: accessToken };
     } finally {
-      mailOff?.mockRestore();
+      noCode?.mockRestore();
     }
   };
 
@@ -394,8 +407,6 @@ describe('API (e2e)', () => {
     afterEach(() => jest.restoreAllMocks());
 
     it('registers and logs in with normalised emails', async () => {
-      // With mail off, so the user is confirmed and gets their role's permissions.
-      jest.spyOn(app.get(Mailer), 'enabled', 'get').mockReturnValue(false);
       const email = `${uniqueName()}@example.com`;
       const nickname = uniqueNickname();
       const registered = await anonymous()
@@ -403,6 +414,8 @@ describe('API (e2e)', () => {
         .send({ email, nickname, password })
         .expect(201);
       const { accessToken: token } = registered.body as { accessToken: string };
+      // Confirmed, so the user gets their role's permissions.
+      await confirmEmail(email);
 
       await expect(currentUser(token)).resolves.toMatchObject({
         email,
@@ -693,22 +706,6 @@ describe('API (e2e)', () => {
           );
         }
         await verify(token, second).expect(204);
-      });
-
-      it('confirms users straight away while mail is off', async () => {
-        jest.spyOn(app.get(Mailer), 'enabled', 'get').mockReturnValue(false);
-        const { token, email } = await register({ verified: false });
-
-        expect((await currentUser(token)).emailVerifiedAt).not.toBeNull();
-        expect(codesMailedTo(email)).toEqual([]);
-      });
-
-      it('confirms on resend once mail has been turned off', async () => {
-        const { token } = await register({ verified: false });
-        jest.spyOn(app.get(Mailer), 'enabled', 'get').mockReturnValue(false);
-
-        await resend(token).expect(204);
-        expect((await currentUser(token)).emailVerifiedAt).not.toBeNull();
       });
     });
   });

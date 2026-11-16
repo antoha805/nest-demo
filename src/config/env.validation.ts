@@ -89,14 +89,12 @@ export class EnvironmentVariables {
   })
   APP_URL: string = 'http://localhost:3000';
 
-  // How mails are sent, like Laravel's. Unset or empty turns mail off, and
-  // notifications leave out the mail channel.
+  // How mails are sent, like Laravel's. Unset or empty writes them to the log.
   @Transform(({ value }: { value: unknown }) =>
-    value === '' ? undefined : value,
+    value === undefined || value === '' ? 'log' : value,
   )
-  @IsOptional()
   @IsIn(MAIL_MAILERS)
-  MAIL_MAILER?: MailMailer;
+  MAIL_MAILER: MailMailer = 'log';
 
   // Holds the password, so its error does not show it.
   @ValidateIf((env: EnvironmentVariables) => env.MAIL_MAILER === 'smtp')
@@ -106,7 +104,7 @@ export class EnvironmentVariables {
   MAIL_URL?: string;
 
   @ValidateIf((env: EnvironmentVariables) =>
-    ['smtp', 'ses'].includes(env.MAIL_MAILER as string),
+    ['smtp', 'ses'].includes(env.MAIL_MAILER),
   )
   @IsString()
   @IsNotEmpty()

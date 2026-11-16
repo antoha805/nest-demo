@@ -16,11 +16,11 @@ export interface Mail {
 }
 
 // Sends by MAIL_MAILER, like Laravel: through the SMTP server of MAIL_URL,
-// through Amazon SES, or to the log. Off without one.
+// through Amazon SES, or to the log, which is the default.
 @Injectable()
 export class Mailer implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(Mailer.name);
-  private readonly mailer?: MailMailer;
+  private readonly mailer: MailMailer;
   private readonly from?: string;
   private transport: Transporter | null = null;
 
@@ -33,25 +33,16 @@ export class Mailer implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     this.transport = await this.createTransport();
-    if (!this.enabled) {
-      this.logger.log('Mail is off, as MAIL_MAILER is not set');
-    }
-  }
-
-  get enabled(): boolean {
-    return this.mailer !== undefined;
   }
 
   async send(mail: Mail): Promise<void> {
     if (this.transport) {
       await this.transport.sendMail({ from: this.from, ...mail });
-    } else if (this.mailer === 'log') {
+    } else {
       this.logger.log(
         { mail: { to: mail.to, subject: mail.subject, text: mail.text } },
         'Logged a mail, as MAIL_MAILER is log',
       );
-    } else {
-      throw new Error('Mail is off, as MAIL_MAILER is not set');
     }
   }
 

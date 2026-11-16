@@ -23,13 +23,6 @@ describe('Mailer', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
-  it('is off without MAIL_MAILER, and refuses to send', async () => {
-    const mailer = await create({});
-
-    expect(mailer.enabled).toBe(false);
-    await expect(mailer.send(mail)).rejects.toThrow(/MAIL_MAILER/);
-  });
-
   it('logs mails with the log mailer', async () => {
     const log = jest
       .spyOn(Logger.prototype, 'log')
@@ -38,7 +31,6 @@ describe('Mailer', () => {
 
     await mailer.send(mail);
 
-    expect(mailer.enabled).toBe(true);
     expect(log).toHaveBeenCalledWith(
       { mail: { to: mail.to, subject: mail.subject, text: mail.text } },
       expect.stringContaining('Logged a mail'),

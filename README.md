@@ -116,7 +116,7 @@ Settings are read from environment variables and `.env`; see `.env.example`. Rea
 | `JWT_SECRET`         | Yes                  | Key that signs access tokens, at least 32 characters                                 |
 | `JWT_EXPIRES_IN`     | No                   | Access token lifetime in seconds (default `3600`)                                    |
 | `APP_URL`            | No                   | The app's own URL, which links in mails start with (default `http://localhost:3000`) |
-| `MAIL_MAILER`        | No                   | How mails are sent: `smtp`, `ses` or `log`. Unset or empty turns mail off            |
+| `MAIL_MAILER`        | No                   | How mails are sent: `smtp`, `ses` or `log` (default `log`, also when empty)          |
 | `MAIL_URL`           | With `smtp`          | SMTP server, such as `smtps://user:password@smtp.example.com:465`                    |
 | `MAIL_FROM`          | With `smtp` or `ses` | Sender of mails, such as `nest-demo <noreply@example.com>`                           |
 | `AWS_REGION`         | With `ses` or `sns`  | SES and SNS region, such as `eu-central-1`                                           |
@@ -150,7 +150,6 @@ Registering mails a 6-digit code to the new user, who confirms their email by se
 - A code expires after 15 minutes, and stops working after 5 wrong tries, so it cannot be guessed. `verify-email` also allows 10 requests per minute per IP.
 - `POST /api/auth/verify-email/resend` mails a new code, which replaces the old one, at most once a minute: sooner gets `429 Too Many Requests`. Once confirmed, it gets `409 Conflict`, and confirming again does nothing.
 - Codes are stored as an HMAC keyed with `JWT_SECRET`, never as is, and only work for the account they were sent to.
-- With mail off (`MAIL_MAILER` unset), no code could arrive, so new users are confirmed when they register, and unconfirmed ones when they ask for a new code.
 - Users who registered before confirmation existed were marked as confirmed by the migration that added it.
 
 A user holds roles, each role grants permissions, and permissions can also be granted to a user directly. They are read from the database on every request, so changes apply immediately to tokens already issued. Passwords are hashed with bcrypt.
@@ -293,8 +292,7 @@ It renders as plain text and HTML, with the lines and buttons in the order they 
 
 - `smtp` sends them through the SMTP server of `MAIL_URL`, from `MAIL_FROM`.
 - `ses` sends them through [Amazon SES](https://aws.amazon.com/ses/) in `AWS_REGION`, from `MAIL_FROM`. The AWS SDK is loaded only for this mailer.
-- `log` writes them to the log instead, including the address and text, as in development.
-- Unset or empty turns mail off: the mail channel is left out, and the app logs so at startup.
+- `log` writes them to the log instead, including the address and text, as in development. It is the default, also when `MAIL_MAILER` is empty, so the mail channel is never left out.
 
 As mails are sent within the request, a slow mail server slows down the request that sent the notification; a queue would fix that once it matters.
 

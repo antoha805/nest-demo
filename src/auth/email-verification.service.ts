@@ -10,7 +10,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EnvironmentVariables } from '../config/env.validation';
-import { Mailer } from '../mail/mailer';
 import { NotificationsService } from '../notifications/notifications.service';
 import { User } from '../users/user.entity';
 import { AuthenticatedUser } from './authenticated-user';
@@ -32,30 +31,19 @@ export class EmailVerificationService {
   constructor(
     private readonly em: EntityManager,
     private readonly notificationsService: NotificationsService,
-    private readonly mailer: Mailer,
     config: ConfigService<EnvironmentVariables, true>,
   ) {
     this.secret = config.get('JWT_SECRET', { infer: true });
   }
 
-  // For a user who just registered. With mail off no code could arrive, so
-  // they are confirmed straight away.
+  // For a user who just registered.
   async start(userId: string): Promise<void> {
-    if (!this.mailer.enabled) {
-      await this.markVerified(userId);
-      return;
-    }
     await this.sendCode(userId);
   }
 
   async resend(user: AuthenticatedUser): Promise<void> {
     if (user.emailVerifiedAt) {
       throw new ConflictException('Your email is already confirmed');
-    }
-    // Such as when mail was turned off since they registered.
-    if (!this.mailer.enabled) {
-      await this.markVerified(user.id);
-      return;
     }
     const pending = await this.em.findOne(EmailVerification, {
       userId: user.id,

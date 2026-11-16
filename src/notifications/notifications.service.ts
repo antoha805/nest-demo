@@ -36,7 +36,7 @@ export class NotificationsService {
 
   // In the order they run: a broadcast names the stored notification, so the
   // database comes first, and mail and SMS go to outside services, so they do
-  // not hold up the rest. Each is left out while it is off, so notifications
+  // not hold up the rest. SMS is left out while it is off, so notifications
   // that list it are still sent through the others.
   private readonly channels: [NotificationChannelName, NotificationChannel][];
 
@@ -51,10 +51,8 @@ export class NotificationsService {
     this.channels = [
       ['database', databaseChannel],
       ['broadcast', broadcastChannel],
+      ['mail', mailChannel],
     ];
-    if (mailChannel.enabled) {
-      this.channels.push(['mail', mailChannel]);
-    }
     if (smsChannel.enabled) {
       this.channels.push(['sms', smsChannel]);
     }

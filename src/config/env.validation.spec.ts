@@ -73,9 +73,9 @@ describe('validate', () => {
   );
 
   it.each([undefined, ''])(
-    'turns mail off for MAIL_MAILER=%j',
+    'defaults to the log mailer for MAIL_MAILER=%j',
     (MAIL_MAILER) => {
-      expect(validate({ ...env, MAIL_MAILER }).MAIL_MAILER).toBeUndefined();
+      expect(validate({ ...env, MAIL_MAILER }).MAIL_MAILER).toBe('log');
     },
   );
 
