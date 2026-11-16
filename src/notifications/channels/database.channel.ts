@@ -13,11 +13,11 @@ export class DatabaseChannel implements NotificationChannel {
   async send(deliveries: NotificationDelivery[]): Promise<void> {
     await this.em.insertMany(
       DatabaseNotification,
-      deliveries.map(({ id, userId, notification, createdAt }) => ({
+      deliveries.map(({ id, notifiable, notification, createdAt }) => ({
         id,
-        userId,
+        userId: notifiable.id,
         type: notification.type,
-        data: notification.toDatabase(userId),
+        data: notification.toDatabase(notifiable),
         createdAt,
       })),
     );

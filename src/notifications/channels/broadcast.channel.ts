@@ -11,11 +11,11 @@ export class BroadcastChannel implements NotificationChannel {
   constructor(private readonly broadcaster: NotificationBroadcaster) {}
 
   send(deliveries: NotificationDelivery[]): void {
-    for (const { id, userId, notification, createdAt } of deliveries) {
-      this.broadcaster.publish(userId, {
+    for (const { id, notifiable, notification, createdAt } of deliveries) {
+      this.broadcaster.publish(notifiable.id, {
         id,
         type: notification.type,
-        data: notification.toBroadcast(userId),
+        data: notification.toBroadcast(notifiable),
         readAt: null,
         createdAt,
       });

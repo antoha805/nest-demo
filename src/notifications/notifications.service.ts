@@ -6,6 +6,8 @@ import { isUUID } from 'class-validator';
 import { Observable } from 'rxjs';
 import { cursorPaginate, CursorPaginated } from '../common/cursor-paginated';
 import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
+import { NotifiableUser } from '../users/notifiable-user';
+import { User } from '../users/user.entity';
 import { BroadcastChannel } from './channels/broadcast.channel';
 import { DatabaseChannel } from './channels/database.channel';
 import { MailChannel } from './channels/mail.channel';
@@ -20,6 +22,10 @@ import {
   BroadcastNotification,
   NotificationBroadcaster,
 } from './notification-broadcaster';
+
+// Users by id, or ready-made, such as from a user already loaded.
+export type NotificationRecipients =
+  string | NotifiableUser | (string | NotifiableUser)[];
 
 // At most this many missed notifications are replayed to a stream, the newest.
 // Clients can list the rest.
@@ -57,24 +63,34 @@ export class NotificationsService {
 
   // Sent after the change it is about has been saved, so a failure is logged
   // rather than failing the request. It also stops the later channels, which
-  // could otherwise name a notification that was not stored.
+  // could otherwise name a notification that was not stored. Users that do
+  // not exist, such as deleted since, are skipped.
   async send(
-    userIds: string | string[],
+    to: NotificationRecipients,
     notification: Notification,
   ): Promise<void> {
+    let notifiables: NotifiableUser[];
+    try {
+      notifiables = await this.findNotifiables(to);
+    } catch (error: unknown) {
+      this.logger.error(
+        { err: error, type: notification.type },
+        'Failed to find whom to notify',
+      );
+      return;
+    }
+
     const createdAt = new Date();
-    const deliveries = [...new Set([userIds].flat())].map(
-      (userId): NotificationDelivery => ({
-        id: randomUUIDv7(),
-        userId,
-        notification,
-        createdAt,
-      }),
-    );
+    const deliveries = notifiables.map((notifiable) => ({
+      id: randomUUIDv7(),
+      notifiable,
+      notification,
+      createdAt,
+    }));
 
     for (const [name, channel] of this.channels) {
-      const recipients = deliveries.filter(({ userId }) =>
-        notification.via(userId).includes(name),
+      const recipients: NotificationDelivery[] = deliveries.filter(
+        ({ notifiable }) => notification.via(notifiable).includes(name),
       );
       if (!recipients.length) {
         continue;
@@ -89,6 +105,36 @@ export class NotificationsService {
         return;
       }
     }
+  }
+
+  // Once each, in the order given. Those given by id are loaded in one query.
+  private async findNotifiables(
+    to: NotificationRecipients,
+  ): Promise<NotifiableUser[]> {
+    const items = [to].flat();
+    const ids = items.filter((item) => typeof item === 'string');
+    // Forked, so the partly loaded users stay out of the request's identity map.
+    const users = ids.length
+      ? await this.em
+          .fork()
+          .find(
+            User,
+            { id: { $in: ids } },
+            { fields: [...NotifiableUser.FIELDS] },
+          )
+      : [];
+    const found = new Map(
+      users.map((user) => [user.id, NotifiableUser.from(user)]),
+    );
+
+    const notifiables = new Map<string, NotifiableUser>();
+    for (const item of items) {
+      const notifiable = typeof item === 'string' ? found.get(item) : item;
+      if (notifiable && !notifiables.has(notifiable.id)) {
+        notifiables.set(notifiable.id, notifiable);
+      }
+    }
+    return [...notifiables.values()];
   }
 
   findAll(

@@ -1,50 +1,45 @@
-import { PublicUser } from '../users/public-user';
+import type { NotifiableUser } from '../users/notifiable-user';
 import { MailMessage } from './messages/mail-message';
 import { SmsMessage } from './messages/sms-message';
+import type { Notifiable } from './notifiable';
 
 export type NotificationChannelName = 'database' | 'broadcast' | 'mail' | 'sms';
 
-// Who a mail goes to, so it can address them by nickname.
-export interface MailRecipient extends PublicUser {
-  email: string;
-}
-
-// Who a text goes to: only users with a phone number get one.
-export interface SmsRecipient extends PublicUser {
-  phone: string;
-}
-
-// One subclass per kind of notification, like in Laravel, sent to users with
-// NotificationsService.send. Users are identified by id.
-export abstract class Notification<TData extends object = object> {
+// One subclass per kind of notification, like in Laravel, sent with
+// NotificationsService.send. Each method gets the notifiable it is for: a
+// NotifiableUser, unless a subclass is for another kind.
+export abstract class Notification<
+  TData extends object = object,
+  N extends Notifiable = NotifiableUser,
+> {
   // Lets clients tell the kinds apart, such as post.commented.
   abstract readonly type: string;
 
-  // The channels that deliver this notification to the user. Subclasses can
-  // choose by user, such as by their settings. Mail and SMS are left out by
-  // default, as they need toMail and toSms.
+  // The channels that deliver this notification to the notifiable. Subclasses
+  // can choose by notifiable, such as by their settings. Mail and SMS are left
+  // out by default, as they need toMail and toSms.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  via(userId: string): NotificationChannelName[] {
+  via(notifiable: N): NotificationChannelName[] {
     return ['database', 'broadcast'];
   }
 
   // Stored, so it has to stay meaningful after the records it names change.
-  abstract toDatabase(userId: string): TData;
+  abstract toDatabase(notifiable: N): TData;
 
-  // Sent to the user's open streams.
-  toBroadcast(userId: string): TData {
-    return this.toDatabase(userId);
+  // Sent to the notifiable's open streams.
+  toBroadcast(notifiable: N): TData {
+    return this.toDatabase(notifiable);
   }
 
   // Needed by notifications that list mail in via.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  toMail(user: MailRecipient): MailMessage {
+  toMail(notifiable: N): MailMessage {
     throw new Error(`${this.type} lists mail in via but has no toMail`);
   }
 
   // Needed by notifications that list sms in via.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  toSms(user: SmsRecipient): SmsMessage {
+  toSms(notifiable: N): SmsMessage {
     throw new Error(`${this.type} lists sms in via but has no toSms`);
   }
 }

@@ -1,11 +1,11 @@
 import { AuthenticatedUser } from '../../auth/authenticated-user';
 import { MailMessage } from '../../notifications/messages/mail-message';
 import {
-  MailRecipient,
   Notification,
   NotificationChannelName,
 } from '../../notifications/notification';
 import { Post } from '../../posts/post.entity';
+import { NotifiableUser } from '../../users/notifiable-user';
 import { PublicUser, toPublicUser } from '../../users/public-user';
 import { Comment } from '../comment.entity';
 
@@ -41,7 +41,7 @@ export class PostCommentedNotification extends Notification<PostCommentedData> {
     };
   }
 
-  toMail(user: MailRecipient): MailMessage {
+  toMail(user: NotifiableUser): MailMessage {
     return new MailMessage()
       .subject(`New comment on "${this.post.title}"`)
       .greeting(`Hi ${user.nickname}!`)

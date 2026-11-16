@@ -21,7 +21,6 @@ import { DatabaseNotification } from './../src/notifications/database-notificati
 import { Mail, Mailer } from './../src/mail/mailer';
 import { MailMessage } from './../src/notifications/messages/mail-message';
 import {
-  MailRecipient,
   Notification as AppNotification,
   NotificationChannelName,
 } from './../src/notifications/notification';
@@ -35,6 +34,7 @@ import {
 } from './../src/roles/permission-names';
 import { Permission } from './../src/roles/permission.entity';
 import { Role } from './../src/roles/role.entity';
+import { NotifiableUser } from './../src/users/notifiable-user';
 import { User } from './../src/users/user.entity';
 
 describe('API (e2e)', () => {
@@ -1977,7 +1977,7 @@ describe('API (e2e)', () => {
               return {};
             }
 
-            toMail(user: MailRecipient) {
+            toMail(user: NotifiableUser) {
               return new MailMessage()
                 .subject('Welcome')
                 .greeting(`Hi ${user.nickname}!`)

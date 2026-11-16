@@ -1,9 +1,9 @@
 import { MailMessage } from '../../notifications/messages/mail-message';
 import {
-  MailRecipient,
   Notification,
   NotificationChannelName,
 } from '../../notifications/notification';
+import { NotifiableUser } from '../../users/notifiable-user';
 
 // Mails the code that confirms a new user's email, like Laravel's VerifyEmail.
 // Only mailed: the code must not be stored or sent anywhere else.
@@ -26,7 +26,7 @@ export class VerifyEmailNotification extends Notification {
     return {};
   }
 
-  toMail(user: MailRecipient): MailMessage {
+  toMail(user: NotifiableUser): MailMessage {
     return new MailMessage()
       .subject(`Your confirmation code: ${this.code}`)
       .greeting(`Hi ${user.nickname}!`)

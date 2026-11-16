@@ -229,12 +229,14 @@ Liking and unliking are idempotent and respond with `204 No Content`. Posts and 
 
 ## Notifications
 
-Modeled on Laravel's notifications. Each kind is a subclass of `Notification` (`src/notifications/notification.ts`) with a `type`, `toDatabase()` for the data it stores, and optionally `via()` to pick its channels and `toBroadcast()` for different live data. `NotificationsService.send(userIds, notification)` delivers it through each channel:
+Modeled on Laravel's notifications. Each kind is a subclass of `Notification` (`src/notifications/notification.ts`) with a `type`, `toDatabase()` for the data it stores, and optionally `via()` to pick its channels and `toBroadcast()` for different live data. `NotificationsService.send(users, notification)` delivers it through each channel, to users given by id or as `NotifiableUser`s, skipping those that do not exist:
 
 - `database` stores it in the `notifications` table, for the list and unread count.
 - `broadcast` sends it to the user's open streams.
 - `mail` mails it to the user's email. Not in `via()` by default, as the notification needs a `toMail()`.
 - `sms` texts it to the user's phone, if they have one. Not in `via()` by default, as the notification needs a `toSms()`.
+
+Like Laravel's `$notifiable`, every method gets whom the notification is for: a `Notifiable` (`src/notifications/notifiable.ts`), which has an `id` and gives the address for mail and SMS through `routeNotificationFor()`. Users are wrapped in a `NotifiableUser` (`src/users/notifiable-user.ts`) with their `nickname`, `email` and `phone`, so the `User` entity stays a database model. A notification for other notifiables names their class as its second type parameter.
 
 The channels run in that order and all use the same id, so a broadcast always names a stored notification, and mail and SMS, the slowest, hold up neither. Sending happens in the request, with no queue, after the change it is about has been saved. A failing channel is logged, stops the channels after it, and does not fail the request.
 
@@ -276,7 +278,7 @@ via() {
   return ['database', 'broadcast', 'mail'];
 }
 
-toMail(user: MailRecipient) {
+toMail(user: NotifiableUser) {
   return new MailMessage()
     .subject('New comment on your post')
     .greeting(`Hi ${user.nickname}!`)
@@ -312,7 +314,7 @@ via() {
   return ['database', 'broadcast', 'sms'];
 }
 
-toSms(user: SmsRecipient) {
+toSms(user: NotifiableUser) {
   return new SmsMessage().content(
     `${this.commenter.nickname} commented on "${this.post.title}".`,
   );

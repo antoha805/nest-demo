@@ -1,11 +1,12 @@
+import { Notifiable } from '../notifiable';
 import { Notification } from '../notification';
 
-// One notification for one user.
+// One notification for one notifiable.
 export interface NotificationDelivery {
   // The same for every channel, so a broadcast names the stored notification.
   id: string;
-  userId: string;
-  notification: Notification;
+  notifiable: Notifiable;
+  notification: Notification<object, Notifiable>;
   createdAt: Date;
 }
 
