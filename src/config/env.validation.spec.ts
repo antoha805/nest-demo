@@ -164,9 +164,9 @@ describe('validate', () => {
 
   describe('SMS_DRIVER', () => {
     it.each([undefined, ''])(
-      'turns SMS off for SMS_DRIVER=%j',
+      'defaults to the log driver for SMS_DRIVER=%j',
       (SMS_DRIVER) => {
-        expect(validate({ ...env, SMS_DRIVER }).SMS_DRIVER).toBeUndefined();
+        expect(validate({ ...env, SMS_DRIVER }).SMS_DRIVER).toBe('log');
       },
     );
 

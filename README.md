@@ -120,7 +120,7 @@ Settings are read from environment variables and `.env`; see `.env.example`. Rea
 | `MAIL_URL`           | With `smtp`          | SMTP server, such as `smtps://user:password@smtp.example.com:465`                    |
 | `MAIL_FROM`          | With `smtp` or `ses` | Sender of mails, such as `nest-demo <noreply@example.com>`                           |
 | `AWS_REGION`         | With `ses` or `sns`  | SES and SNS region, such as `eu-central-1`                                           |
-| `SMS_DRIVER`         | No                   | How texts are sent: `sns`, `twilio` or `log`. Unset or empty turns SMS off           |
+| `SMS_DRIVER`         | No                   | How texts are sent: `sns`, `twilio` or `log` (default `log`, also when empty)        |
 | `SMS_FROM`           | With `twilio`        | Sender of texts: a number, a sender ID, or a Twilio messaging service SID (`MG...`)  |
 | `TWILIO_ACCOUNT_SID` | With `twilio`        | Twilio account SID, `AC...`                                                          |
 | `TWILIO_AUTH_TOKEN`  | With `twilio`        | Twilio auth token                                                                    |
@@ -233,8 +233,8 @@ Modeled on Laravel's notifications. Each kind is a subclass of `Notification` (`
 
 - `database` stores it in the `notifications` table, for the list and unread count.
 - `broadcast` sends it to the user's open streams.
-- `mail` mails it to the user's email. Not in `via()` by default, as the notification needs a `toMail()`. Left out while mail is off, so notifications that list it are still sent through the others.
-- `sms` texts it to the user's phone, if they have one. Not in `via()` by default, as the notification needs a `toSms()`. Left out while SMS is off, like mail.
+- `mail` mails it to the user's email. Not in `via()` by default, as the notification needs a `toMail()`.
+- `sms` texts it to the user's phone, if they have one. Not in `via()` by default, as the notification needs a `toSms()`.
 
 The channels run in that order and all use the same id, so a broadcast always names a stored notification, and mail and SMS, the slowest, hold up neither. Sending happens in the request, with no queue, after the change it is about has been saved. A failing channel is logged, stops the channels after it, and does not fail the request.
 
@@ -325,8 +325,7 @@ Texts go to the user's `phone`, which they set with `PATCH /api/auth/me` as `{ "
 
 - `sns` sends them through [Amazon SNS](https://docs.aws.amazon.com/sns/latest/dg/sns-mobile-phone-number-as-subscriber.html) in `AWS_REGION`, as transactional texts, with `SMS_FROM` as the sender ID if set and the country allows one. Credentials are found as for SES, and the IAM role needs `sns:Publish`. New accounts are in the SMS sandbox, which only texts verified numbers until production access is requested. The AWS SDK is loaded only for this driver.
 - `twilio` sends them through [Twilio's Messages API](https://www.twilio.com/docs/messaging/api/message-resource) with `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`, from `SMS_FROM`: a Twilio number, an alphanumeric sender ID, or a messaging service SID (`MG...`). It uses the [twilio](https://www.npmjs.com/package/twilio) SDK, loaded only for this driver, and gives up after 10 seconds. A refused text fails with its Twilio error code, such as 21211 for an invalid number.
-- `log` writes them to the log instead, including the number and text, as in development.
-- Unset or empty turns SMS off: the sms channel is left out, and the app logs so at startup.
+- `log` writes them to the log instead, including the number and text, as in development. It is the default, also when `SMS_DRIVER` is empty, so the sms channel is never left out.
 
 Another provider takes a class implementing `SmsTransport` (`src/sms/sms-transport.ts`), a name in `SMS_DRIVERS` and its settings in `src/config/env.validation.ts`, and a case in `SmsSender.createTransport`.
 

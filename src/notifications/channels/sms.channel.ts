@@ -19,11 +19,6 @@ export class SmsChannel implements NotificationChannel {
     private readonly sender: SmsSender,
   ) {}
 
-  // Off without SMS_DRIVER.
-  get enabled(): boolean {
-    return this.sender.enabled;
-  }
-
   async send(deliveries: NotificationDelivery[]): Promise<void> {
     const recipients = await this.findRecipients(
       deliveries.map(({ userId }) => userId),

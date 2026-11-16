@@ -36,8 +36,7 @@ export class NotificationsService {
 
   // In the order they run: a broadcast names the stored notification, so the
   // database comes first, and mail and SMS go to outside services, so they do
-  // not hold up the rest. SMS is left out while it is off, so notifications
-  // that list it are still sent through the others.
+  // not hold up the rest.
   private readonly channels: [NotificationChannelName, NotificationChannel][];
 
   constructor(
@@ -52,10 +51,8 @@ export class NotificationsService {
       ['database', databaseChannel],
       ['broadcast', broadcastChannel],
       ['mail', mailChannel],
+      ['sms', smsChannel],
     ];
-    if (smsChannel.enabled) {
-      this.channels.push(['sms', smsChannel]);
-    }
   }
 
   // Sent after the change it is about has been saved, so a failure is logged

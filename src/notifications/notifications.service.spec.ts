@@ -27,14 +27,14 @@ describe('NotificationsService', () => {
       ...extra,
     }) as unknown as T;
 
-  const create = (smsEnabled = true) =>
+  const create = () =>
     new NotificationsService(
       {} as EntityManager,
       {} as NotificationBroadcaster,
       channel<DatabaseChannel>('database'),
       channel<BroadcastChannel>('broadcast'),
       channel<MailChannel>('mail'),
-      channel<SmsChannel>('sms', { enabled: smsEnabled }),
+      channel<SmsChannel>('sms'),
     );
 
   beforeEach(() => {
@@ -45,11 +45,5 @@ describe('NotificationsService', () => {
     await create().send('user', new EverywhereNotification());
 
     expect(sent).toEqual(['database', 'broadcast', 'mail', 'sms']);
-  });
-
-  it('leaves out SMS while it is off, and still sends through the others', async () => {
-    await create(false).send('user', new EverywhereNotification());
-
-    expect(sent).toEqual(['database', 'broadcast', 'mail']);
   });
 });

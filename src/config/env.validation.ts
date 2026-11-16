@@ -5,7 +5,6 @@ import {
   IsIn,
   IsInt,
   IsNotEmpty,
-  IsOptional,
   IsString,
   IsUrl,
   Matches,
@@ -110,14 +109,12 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   MAIL_FROM?: string;
 
-  // How texts are sent. Unset or empty turns SMS off, and notifications leave
-  // out the sms channel.
+  // How texts are sent. Unset or empty writes them to the log.
   @Transform(({ value }: { value: unknown }) =>
-    value === '' ? undefined : value,
+    value === undefined || value === '' ? 'log' : value,
   )
-  @IsOptional()
   @IsIn(SMS_DRIVERS)
-  SMS_DRIVER?: SmsDriver;
+  SMS_DRIVER: SmsDriver = 'log';
 
   // The sender: for twilio, a number of the account, an alphanumeric sender ID
   // or a messaging service SID (MG...); for sns, an optional sender ID, where

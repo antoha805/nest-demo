@@ -21,13 +21,6 @@ describe('SmsSender', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
-  it('is off without SMS_DRIVER, and refuses to send', async () => {
-    const sender = await create({});
-
-    expect(sender.enabled).toBe(false);
-    await expect(sender.send(sms)).rejects.toThrow(/SMS_DRIVER/);
-  });
-
   it('logs texts with the log driver', async () => {
     const log = jest
       .spyOn(Logger.prototype, 'log')
@@ -36,7 +29,6 @@ describe('SmsSender', () => {
 
     await sender.send(sms);
 
-    expect(sender.enabled).toBe(true);
     expect(log).toHaveBeenCalledWith(
       { sms },
       expect.stringContaining('Logged an SMS'),
