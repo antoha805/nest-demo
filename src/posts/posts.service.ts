@@ -78,19 +78,12 @@ export class PostsService {
     authorId: string,
   ): Promise<Post> {
     await this.assertCategoryExists(categoryId);
-    const published = dto.published ?? false;
     const post = this.em.create(Post, {
-      title: dto.title,
-      content: dto.content,
-      published,
-      announcedAt: published ? new Date() : null,
+      ...dto,
       category: categoryId,
       authorId,
     });
     await this.em.flush();
-    if (published) {
-      await this.announce(post);
-    }
     return this.findOneForUser({ id: post.id }, authorId);
   }
 
@@ -167,8 +160,19 @@ export class PostsService {
     if (!keepPublished) {
       post.published = false;
     }
+    await this.em.flush();
+    return this.findOneForUser({ id }, userId);
+  }
+
+  // Idempotent. Only the first publishing announces the post.
+  async publish(id: string): Promise<void> {
+    const post = await this.findOne(id);
+    if (post.published) {
+      return;
+    }
+    post.published = true;
     // Saved with the change, so a post is announced once.
-    const announce = post.published && !post.announcedAt;
+    const announce = !post.announcedAt;
     if (announce) {
       post.announcedAt = new Date();
     }
@@ -176,7 +180,12 @@ export class PostsService {
     if (announce) {
       await this.announce(post);
     }
-    return this.findOneForUser({ id }, userId);
+  }
+
+  async unpublish(id: string): Promise<void> {
+    const post = await this.findOne(id);
+    post.published = false;
+    await this.em.flush();
   }
 
   async remove(id: string): Promise<void> {

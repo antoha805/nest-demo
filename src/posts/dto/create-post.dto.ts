@@ -1,12 +1,6 @@
-import {
-  IsBoolean,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-} from 'class-validator';
+import { IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
 
+// New posts are drafts: they are published with PUT /posts/:id/publish.
 export class CreatePostDto {
   @IsString()
   @IsNotEmpty()
@@ -16,10 +10,6 @@ export class CreatePostDto {
   @IsString()
   @IsNotEmpty()
   content: string;
-
-  @IsOptional()
-  @IsBoolean()
-  published?: boolean;
 
   @IsUUID()
   categoryId: string;

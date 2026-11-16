@@ -116,6 +116,12 @@ describe('API (e2e)', () => {
     return response.body as Category;
   };
 
+  // As the admin, unless another user is given.
+  const publish = (postId: string, client = http()) =>
+    client.put(`/api/posts/${postId}/publish`).expect(204);
+  const unpublish = (postId: string, client = http()) =>
+    client.delete(`/api/posts/${postId}/publish`).expect(204);
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -182,14 +188,24 @@ describe('API (e2e)', () => {
 
     await http().delete(`/api/categories/${first.id}`).expect(409);
 
+    await http()
+      .post('/api/posts')
+      .send({
+        title: 'Title',
+        content: 'Content',
+        categoryId: first.id,
+        published: true,
+      })
+      .expect(400);
+
     const updated = await http()
       .patch(`/api/posts/${post.id}`)
-      .send({ title: 'New title', published: true, categoryId: second.id })
+      .send({ title: 'New title', categoryId: second.id })
       .expect(200);
     expect(updated.body).toMatchObject({
       title: 'New title',
       content: 'Content',
-      published: true,
+      published: false,
       categoryId: second.id,
       category: { id: second.id },
     });
@@ -199,6 +215,31 @@ describe('API (e2e)', () => {
       .send({})
       .expect(200);
     expect(untouched.body).toMatchObject({ title: 'New title' });
+
+    await http()
+      .patch(`/api/posts/${post.id}`)
+      .send({ published: true })
+      .expect(400);
+
+    await publish(post.id);
+    await publish(post.id);
+    const published = await http().get(`/api/posts/${post.id}`).expect(200);
+    expect(published.body).toMatchObject({ published: true });
+    // Publishing by an admin keeps it published through edits.
+    const edited = await http()
+      .patch(`/api/posts/${post.id}`)
+      .send({ title: 'Edited' })
+      .expect(200);
+    expect(edited.body).toMatchObject({ published: true });
+
+    await unpublish(post.id);
+    await unpublish(post.id);
+    await anonymous().get(`/api/posts/${post.id}`).expect(404);
+
+    await http().put('/api/posts/not-a-uuid/publish').expect(400);
+    await http().put(`/api/posts/${randomUUID()}/publish`).expect(404);
+    await http().delete(`/api/posts/${randomUUID()}/publish`).expect(404);
+    await anonymous().put(`/api/posts/${post.id}/publish`).expect(401);
 
     await http().delete(`/api/posts/${post.id}`).expect(204);
     await http().get(`/api/posts/${post.id}`).expect(404);
@@ -227,10 +268,7 @@ describe('API (e2e)', () => {
     await expect(count()).resolves.toBe(0);
     expect((draft.body as Post).category).not.toHaveProperty('postsCount');
 
-    await http()
-      .patch(`/api/posts/${postId}`)
-      .send({ published: true })
-      .expect(200);
+    await publish(postId);
     await expect(count()).resolves.toBe(1);
 
     const updated = await http()
@@ -258,12 +296,16 @@ describe('API (e2e)', () => {
       fields: { title: string; content: string; published?: boolean },
       token = adminToken,
     ) => {
+      const { published = true, ...rest } = fields;
       const response = await withToken(token)
         .post('/api/posts')
-        .send({ published: true, ...fields, categoryId })
+        .send({ ...rest, categoryId })
         .expect(201);
       const { id } = response.body as Post;
       postIds.push(id);
+      if (published) {
+        await publish(id);
+      }
       return id;
     };
 
@@ -854,6 +896,41 @@ describe('API (e2e)', () => {
       await withToken(token).get('/api/users').expect(403);
     });
 
+    it('lets reviewers publish posts they cannot edit', async () => {
+      const reviewer = await register();
+      const { id: reviewerId } = await currentUser(reviewer.token);
+      const name = uniqueName();
+      const role = await http()
+        .post('/api/roles')
+        .send({ name, permissions: [PERMISSIONS.POSTS_PUBLISH] })
+        .expect(201);
+      await http()
+        .put(`/api/users/${reviewerId}/roles`)
+        .send({ roles: [name] })
+        .expect(200);
+      const { token: authorToken } = await register();
+      const category = await createCategory();
+      const created = await withToken(authorToken)
+        .post('/api/posts')
+        .send({ title: 'T', content: 'C', categoryId: category.id })
+        .expect(201);
+      const url = `/api/posts/${(created.body as Post).id}`;
+      const client = () => withToken(reviewer.token);
+
+      await client().get(url).expect(200);
+      await client().patch(url).send({ title: 'X' }).expect(403);
+      await client().put(`${url}/publish`).expect(204);
+      await anonymous().get(url).expect(200);
+      await client().delete(`${url}/publish`).expect(204);
+      await anonymous().get(url).expect(404);
+
+      await http().delete(url).expect(204);
+      await http().delete(`/api/categories/${category.id}`).expect(204);
+      await http()
+        .delete(`/api/roles/${(role.body as Role).id}`)
+        .expect(204);
+    });
+
     it('records the author of a post', async () => {
       const { token } = await register();
       const { id: authorId } = await currentUser(token);
@@ -862,12 +939,7 @@ describe('API (e2e)', () => {
         .send({ roles: ['editor'] })
         .expect(200);
       const category = await createCategory();
-      const body = {
-        title: 'T',
-        content: 'C',
-        published: true,
-        categoryId: category.id,
-      };
+      const body = { title: 'T', content: 'C', categoryId: category.id };
 
       await withToken(token)
         .post('/api/posts')
@@ -880,6 +952,7 @@ describe('API (e2e)', () => {
         .expect(201);
       const post = created.body as Post;
       expect(post.authorId).toBe(authorId);
+      await publish(post.id, withToken(token));
 
       await http()
         .patch(`/api/posts/${post.id}`)
@@ -912,10 +985,6 @@ describe('API (e2e)', () => {
       const category = await createCategory();
       const body = { title: 'T', content: 'C', categoryId: category.id };
 
-      await withToken(token)
-        .post('/api/posts')
-        .send({ ...body, published: true })
-        .expect(403);
       const created = await withToken(token)
         .post('/api/posts')
         .send(body)
@@ -948,11 +1017,13 @@ describe('API (e2e)', () => {
 
       await withToken(otherToken).patch(url).send({ title: 'X' }).expect(403);
       await withToken(otherToken).delete(url).expect(403);
-      await withToken(token).patch(url).send({ published: true }).expect(403);
+      await withToken(token).put(`${url}/publish`).expect(403);
+      await withToken(otherToken).put(`${url}/publish`).expect(403);
       await withToken(token).patch(url).send({ title: 'Mine' }).expect(200);
 
-      await http().patch(url).send({ published: true }).expect(200);
+      await publish(id);
       await anonymous().get(url).expect(200);
+      await withToken(token).delete(`${url}/publish`).expect(403);
       await expect(isListed(anonymous())).resolves.toBe(true);
 
       const edited = await withToken(token)
@@ -971,14 +1042,13 @@ describe('API (e2e)', () => {
         const category = await createCategory();
         const created = await withToken(token)
           .post('/api/posts')
-          .send({
-            title: 'T',
-            content: 'C',
-            categoryId: category.id,
-            published,
-          })
+          .send({ title: 'T', content: 'C', categoryId: category.id })
           .expect(201);
-        return created.body as Post;
+        const post = created.body as Post;
+        if (published) {
+          await publish(post.id);
+        }
+        return post;
       };
 
       const createComment = async (token: string, postId: string) => {
@@ -1168,10 +1238,7 @@ describe('API (e2e)', () => {
         await withToken(authorToken).put(`${postUrl}/like`).expect(204);
         await withToken(authorToken).get(`${postUrl}/comments`).expect(200);
 
-        await http()
-          .patch(`/api/posts/${post.id}`)
-          .send({ published: false })
-          .expect(200);
+        await unpublish(post.id);
         const commentUrl = `/api/comments/${comment.id}`;
         await withToken(otherToken).put(`${commentUrl}/like`).expect(404);
         await withToken(otherToken).delete(commentUrl).expect(404);
@@ -1561,10 +1628,7 @@ describe('API (e2e)', () => {
           const author = await register();
           const { id } = await currentUser(author.token);
           const post = await createPost(author.token);
-          await http()
-            .patch(`/api/posts/${post.id}`)
-            .send({ published: true })
-            .expect(200);
+          await publish(post.id);
           return { ...author, id, post };
         };
 
@@ -1867,12 +1931,8 @@ describe('API (e2e)', () => {
               });
             const { announcedAt } = await post();
 
-            for (const published of [false, true]) {
-              await http()
-                .patch(`/api/posts/${author.post.id}`)
-                .send({ published })
-                .expect(200);
-            }
+            await unpublish(author.post.id);
+            await publish(author.post.id);
 
             expect((await post()).announcedAt).toEqual(announcedAt);
             expect((await announcement(author.post.id)).timestamp).toBe(

@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -35,7 +34,6 @@ export class PostsController {
   @Post()
   @CheckPolicies((ability) => ability.can('create', PostEntity))
   create(@Body() dto: CreatePostDto, @CurrentUser() user: AuthenticatedUser) {
-    this.assertCanSetPublished(dto, user);
     return this.postsService.create(dto, user.id);
   }
 
@@ -64,7 +62,6 @@ export class PostsController {
     @Body() dto: UpdatePostDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    this.assertCanSetPublished(dto, user);
     return this.postsService.update(id, dto, {
       keepPublished: this.canPublish(user),
       userId: user.id,
@@ -76,6 +73,22 @@ export class PostsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.postsService.remove(id);
+  }
+
+  // An action of its own rather than a field of the post, so it needs
+  // posts.publish alone, not the right to edit the post too.
+  @Put(':id/publish')
+  @PostAccess('publish')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  publish(@Param('id', ParseUUIDPipe) id: string) {
+    return this.postsService.publish(id);
+  }
+
+  @Delete(':id/publish')
+  @PostAccess('publish')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  unpublish(@Param('id', ParseUUIDPipe) id: string) {
+    return this.postsService.unpublish(id);
   }
 
   @Put(':id/like')
@@ -102,14 +115,5 @@ export class PostsController {
     return this.caslAbilityFactory
       .createForUser(user)
       .can('publish', PostEntity);
-  }
-
-  private assertCanSetPublished(
-    { published }: { published?: boolean },
-    user: AuthenticatedUser,
-  ): void {
-    if (published && !this.canPublish(user)) {
-      throw new ForbiddenException('You cannot publish posts');
-    }
   }
 }

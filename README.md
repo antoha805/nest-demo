@@ -193,6 +193,8 @@ Removing a name from that file makes the next sync delete the permission and all
 | GET    | `/api/posts/:id`                | Public                                         | Get a post                                                 |
 | PATCH  | `/api/posts/:id`                | `posts.update.all` or `posts.update.own`       | Update a post                                              |
 | DELETE | `/api/posts/:id`                | `posts.delete.all` or `posts.delete.own`       | Delete a post                                              |
+| PUT    | `/api/posts/:id/publish`        | `posts.publish`                                | Publish a post                                             |
+| DELETE | `/api/posts/:id/publish`        | `posts.publish`                                | Unpublish a post, making it a draft again                  |
 | PUT    | `/api/posts/:id/like`           | `posts.like`                                   | Like a post                                                |
 | DELETE | `/api/posts/:id/like`           | `posts.like`                                   | Remove your like from a post                               |
 | POST   | `/api/posts/:postId/comments`   | `comments.create`                              | Comment on a post                                          |
@@ -224,7 +226,7 @@ A post's `authorId` is set to the logged-in user when it is created and cannot b
 
 The `.all` permissions apply to every post, and the `.own` ones only to posts the user wrote. Posts with no author need `.all`.
 
-Posts are drafts until published, which requires `posts.publish`. Without it, a user can only create drafts, and editing a published post turns it back into a draft. Published posts are public. Drafts are visible only to their author and to users with `posts.publish`, and return `404 Not Found` to anyone else, so send the token on `GET` requests to see them.
+Posts are created as drafts and published with `PUT /api/posts/:id/publish`, which requires `posts.publish` but not the right to edit the post, so reviewers can publish posts they cannot change. Publishing and unpublishing are idempotent and respond with `204 No Content`. `published` cannot be set when creating or editing a post (`400 Bad Request`). Editing a published post without `posts.publish` turns it back into a draft, so an approved post cannot be rewritten without review. Published posts are public. Drafts are visible only to their author and to users with `posts.publish`, and return `404 Not Found` to anyone else, so send the token on `GET` requests to see them.
 
 Comments and likes follow the post: every route above returns `404 Not Found` if the user cannot read the post, including for a comment they wrote on a post that has since become a draft. Comments stay when their author is deleted, with `authorId` set to `null`, and are deleted with their post. Posts return their total as `commentsCount`, and `myLastCommentAt` holds when the logged-in user last commented on them, or `null` if they have not or no token was sent. Comments can only be edited by their author; `comments.delete.all` is for moderation.
 
@@ -278,7 +280,7 @@ The streams are kept in memory, which works while a single instance of the app r
 
 Notifications for many users are sent by a [BullMQ](https://docs.bullmq.io/) queue on Redis rather than in the request. The `api` process runs its worker. When a post is first published, every user but its author gets a `post.published` notification, through `database` and `broadcast`:
 
-1. `PostsService` sets the post's `announcedAt` when it saves it as published, so publishing it again after unpublishing it announces nothing. It then queues a fan-out job, `NotificationQueue.sendToAllUsers()`, with the newest user's id, so users who join later are left out. The job id, `post-published-<postId>`, keeps it to one job.
+1. `PostsService.publish()` sets the post's `announcedAt` when it saves it as published, so publishing it again after unpublishing it announces nothing. It then queues a fan-out job, `NotificationQueue.sendToAllUsers()`, with the newest user's id, so users who join later are left out. The job id, `post-published-<postId>`, keeps it to one job.
 2. The fan-out job pages through the users by id, 500 at a time, and queues a send job for each page. It pages with a cursor rather than an offset, so users deleted meanwhile do not shift the pages: the cursor is a value, which needs no row of its own. It keeps the cursor with its job, so a retry carries on after the last page it queued, and a send job's id names its first user, so one queued twice is ignored.
 3. Each send job makes the notification again and passes its users to `NotificationsService.send`, which loads them in one query, skips those deleted since, and stores their notifications in one statement. A post deleted or unpublished meanwhile is not announced any more.
 

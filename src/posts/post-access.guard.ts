@@ -15,7 +15,7 @@ import {
 import { CaslAbilityFactory } from '../casl/casl-ability.factory';
 import { PostsService } from './posts.service';
 
-type PostAction = 'update' | 'delete';
+type PostAction = 'update' | 'delete' | 'publish';
 
 const POST_ACTION_KEY = 'postAction';
 
