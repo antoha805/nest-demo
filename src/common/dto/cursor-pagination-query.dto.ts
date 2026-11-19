@@ -4,7 +4,7 @@ import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 export class CursorPaginationQueryDto {
   @IsOptional()
   @IsUUID()
-  after?: string;
+  cursor?: string;
 
   @Type(() => Number)
   @IsInt()

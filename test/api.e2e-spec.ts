@@ -1319,11 +1319,11 @@ describe('API (e2e)', () => {
         // Deleting a comment that was already read must not skip the next one.
         await http().delete(`/api/comments/${ids[2]}`).expect(204);
 
-        const second = await page(`?limit=2&after=${first.nextCursor}`);
+        const second = await page(`?limit=2&cursor=${first.nextCursor}`);
         expect(second.nextCursor).toBeNull();
         expect(second.data.map((c) => c.id)).toEqual([ids[0]]);
 
-        const beyond = await page(`?after=${ids[0]}`);
+        const beyond = await page(`?cursor=${ids[0]}`);
         expect(beyond).toEqual({ data: [], limit: 20, nextCursor: null });
 
         const posts = await anonymous().get('/api/posts?limit=1').expect(200);
@@ -1341,7 +1341,7 @@ describe('API (e2e)', () => {
           await anonymous().get(`/api/posts?${query}`).expect(400);
         }
         await anonymous().get(`${url}?page=1`).expect(400);
-        await anonymous().get(`${url}?after=not-a-uuid`).expect(400);
+        await anonymous().get(`${url}?cursor=not-a-uuid`).expect(400);
       });
 
       it('includes the first page of comments in a single post', async () => {
@@ -1368,7 +1368,7 @@ describe('API (e2e)', () => {
         expect(comments.data[1].myLikeAt).toBeNull();
 
         const next = await anonymous()
-          .get(`${url}/comments?after=${comments.nextCursor}`)
+          .get(`${url}/comments?cursor=${comments.nextCursor}`)
           .expect(200);
         expect(next.body).toMatchObject({
           data: [{ id: ids[0], myLikeAt: null }],
@@ -2022,7 +2022,7 @@ describe('API (e2e)', () => {
 
           const second = await listNotifications(
             author.token,
-            `?limit=2&after=${first.nextCursor}`,
+            `?limit=2&cursor=${first.nextCursor}`,
           );
           expect(commentIds(second)).toEqual([comments[0].id]);
           expect(second.nextCursor).toBeNull();

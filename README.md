@@ -359,13 +359,13 @@ Another provider takes a class implementing `SmsTransport` (`src/sms/sms-transpo
 
 A page past the end has an empty `data`.
 
-`GET /api/posts/:postId/comments` uses cursors instead, as comments are added and deleted while people read them. It accepts `after` and `limit` (default `20`, at most `100`), and lists comments newest first:
+`GET /api/posts/:postId/comments` uses cursors instead, as comments are added and deleted while people read them. It accepts `cursor` and `limit` (default `20`, at most `100`), and lists comments newest first:
 
 ```json
 { "data": [], "limit": 20, "nextCursor": "019a…" }
 ```
 
-To get the next page, send `nextCursor` as `after`. It is `null` on the last page. The total is the post's `commentsCount`.
+To get the next page, send `nextCursor` as `cursor`. It is `null` on the last page. The total is the post's `commentsCount`.
 
 `GET /api/posts/:id` also returns the first page of comments in the same format under `comments`. The other post routes do not.
 

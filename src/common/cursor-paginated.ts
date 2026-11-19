@@ -17,10 +17,10 @@ export interface CursorPage {
 // find has to order by id descending and apply the page.
 export async function cursorPaginate<T extends { id: string }>(
   find: (page: CursorPage) => Promise<T[]>,
-  { after, limit }: CursorPaginationQueryDto,
+  { cursor, limit }: CursorPaginationQueryDto,
 ): Promise<CursorPaginated<T>> {
   // One extra row shows if there is a next page, without counting them all.
-  const rows = await find({ before: after, limit: limit + 1 });
+  const rows = await find({ before: cursor, limit: limit + 1 });
   const data = rows.slice(0, limit);
 
   return {
