@@ -15,6 +15,7 @@ import { NotFoundErrorFilter } from './common/filters/not-found-error.filter';
 import { EnvironmentVariables, validate } from './config/env.validation';
 import { buildLogTransport } from './config/log-transports';
 import { createOrmConfig } from './database/mikro-orm.config';
+import { McpModule } from './mcp/mcp.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PostsModule } from './posts/posts.module';
 
@@ -69,6 +70,7 @@ import { PostsModule } from './posts/posts.module';
     PostsModule,
     CommentsModule,
     NotificationsModule,
+    McpModule,
   ],
   providers: [
     {

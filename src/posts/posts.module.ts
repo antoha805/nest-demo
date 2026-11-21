@@ -20,5 +20,6 @@ import { PostsService } from './posts.service';
   ],
   controllers: [PostsController],
   providers: [PostsService, PostPublishedNotificationFactory],
+  exports: [PostsService],
 })
 export class PostsModule {}

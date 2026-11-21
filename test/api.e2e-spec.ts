@@ -469,6 +469,149 @@ describe('API (e2e)', () => {
     await http().delete(`/api/categories/${category.id}`).expect(204);
   });
 
+  describe('MCP', () => {
+    type ToolResult = {
+      content: { type: string; text: string }[];
+      isError?: boolean;
+    };
+
+    let categoryId: string;
+    let publishedId: string;
+    let draftId: string;
+    let authorToken: string;
+    // In every post, so search_posts finds only this test's posts.
+    const word = randomUUID()
+      .replaceAll('-', '')
+      .replace(/\d/g, (digit) => 'ghijklmnop'[Number(digit)]);
+
+    // Clients must accept both, though the server answers with plain JSON.
+    const rpc = (
+      method: string,
+      params: object,
+      client: ReturnType<typeof anonymous> = anonymous(),
+    ) =>
+      client
+        .post('/api/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .send({ jsonrpc: '2.0', id: 1, method, params });
+
+    const callTool = async (
+      name: string,
+      args: object,
+      client?: ReturnType<typeof anonymous>,
+    ) => {
+      const response = await rpc(
+        'tools/call',
+        { name, arguments: args },
+        client,
+      ).expect(200);
+      return (response.body as { result: ToolResult }).result;
+    };
+    const parse = <T>(result: ToolResult) =>
+      JSON.parse(result.content[0].text) as T;
+
+    beforeAll(async () => {
+      categoryId = (await createCategory()).id;
+      const author = await register();
+      authorToken = author.token;
+      // Only the admin may publish, so the author's post stays a draft.
+      const published = await http()
+        .post('/api/posts')
+        .send({ title: word, content: 'Published', categoryId })
+        .expect(201);
+      publishedId = (published.body as Post).id;
+      await publish(publishedId);
+      const draft = await withToken(authorToken)
+        .post('/api/posts')
+        .send({ title: word, content: 'Draft', categoryId })
+        .expect(201);
+      draftId = (draft.body as Post).id;
+    });
+
+    afterAll(async () => {
+      for (const id of [publishedId, draftId]) {
+        await http().delete(`/api/posts/${id}`).expect(204);
+      }
+      await http().delete(`/api/categories/${categoryId}`).expect(204);
+    });
+
+    it('initializes and lists its read-only tools', async () => {
+      const init = await rpc('initialize', {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'e2e', version: '1.0.0' },
+      }).expect(200);
+      expect(init.body).toMatchObject({
+        result: { serverInfo: { name: 'nest-demo' } },
+      });
+
+      const list = await rpc('tools/list', {}).expect(200);
+      const { tools } = (
+        list.body as {
+          result: { tools: { name: string; annotations: object }[] };
+        }
+      ).result;
+      expect(tools.map((tool) => tool.name).sort()).toEqual([
+        'get_post',
+        'list_categories',
+        'search_posts',
+      ]);
+      for (const tool of tools) {
+        expect(tool.annotations).toMatchObject({ readOnlyHint: true });
+      }
+    });
+
+    it('shows drafts only to those who can see them', async () => {
+      const ids = async (client?: ReturnType<typeof anonymous>) =>
+        parse<Paginated<Post>>(
+          await callTool('search_posts', { q: word }, client),
+        ).data.map((post) => post.id);
+
+      await expect(ids()).resolves.toEqual([publishedId]);
+      await expect(ids(withToken(authorToken))).resolves.toEqual(
+        expect.arrayContaining([publishedId, draftId]),
+      );
+
+      const draft = await callTool('get_post', { id: draftId });
+      expect(draft).toMatchObject({
+        isError: true,
+        content: [{ text: 'The requested record was not found' }],
+      });
+
+      const own = await callTool(
+        'get_post',
+        { id: draftId },
+        withToken(authorToken),
+      );
+      expect(own.isError).toBeFalsy();
+      expect(parse<Post>(own)).toMatchObject({
+        id: draftId,
+        publishedAt: null,
+      });
+    });
+
+    it('lists categories', async () => {
+      const categories = parse<Category[]>(
+        await callTool('list_categories', {}),
+      );
+      expect(categories).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: categoryId, postsCount: 1 }),
+        ]),
+      );
+    });
+
+    it('rejects invalid arguments and other methods', async () => {
+      const invalid = await callTool('get_post', { id: 'not-a-uuid' });
+      expect(invalid.isError).toBe(true);
+      const tooBig = await callTool('search_posts', { limit: 101 });
+      expect(tooBig.isError).toBe(true);
+
+      await anonymous().get('/api/mcp').expect(405).expect('Allow', 'POST');
+      await anonymous().delete('/api/mcp').expect(405);
+    });
+  });
+
   describe('authentication', () => {
     afterEach(() => jest.restoreAllMocks());
 

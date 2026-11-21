@@ -218,6 +218,7 @@ Removing a name from that file makes the next sync delete the permission and all
 | PUT    | `/api/notifications/:id/read`   | Any logged-in user                             | Mark a notification as read                                |
 | DELETE | `/api/notifications/:id/read`   | Any logged-in user                             | Mark a notification as unread                              |
 | POST   | `/api/notifications/read-all`   | Any logged-in user                             | Mark all your notifications as read                        |
+| POST   | `/api/mcp`                      | Public                                         | The MCP server, see [MCP](#mcp)                            |
 
 A category that still has posts cannot be deleted (`409 Conflict`). Categories return `postsCount`, which only counts published posts, so it is the same for every user and does not reveal drafts.
 
@@ -230,6 +231,27 @@ Posts are drafts until published, and publishing is final: a published post cann
 Comments and likes follow the post: every route above returns `404 Not Found` if the user cannot read the post. Comments stay when their author is deleted, with `authorId` set to `null`, and are deleted with their post. Posts return their total as `commentsCount`, and `myLastCommentAt` holds when the logged-in user last commented on them, or `null` if they have not or no token was sent. Comments can only be edited by their author; `comments.delete.all` is for moderation.
 
 Liking and unliking are idempotent and respond with `204 No Content`. Posts and comments return their total as `likesCount`, and `myLikeAt` holds when the logged-in user liked them, or `null` if they have not or no token was sent. The `likes` table is polymorphic: `likeableType` and `likeableId` point to a post or comment. As Postgres cannot enforce a foreign key on that, database triggers delete the likes along with their post or comment. Adding a new likeable type needs a new enum value and such a trigger.
+
+## MCP
+
+`/api/mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server, so AI clients such as Claude Code can read the blog. It is built on the official SDK, `@modelcontextprotocol/sdk`, in `src/mcp`, and offers read-only tools:
+
+| Tool              | Description                                                         |
+| ----------------- | ------------------------------------------------------------------- |
+| `search_posts`    | List posts, or search them with `q`, as `GET /api/posts` does       |
+| `get_post`        | Get a post with its first page of comments, as `GET /api/posts/:id` |
+| `list_categories` | List categories, as `GET /api/categories`                           |
+
+The tools call the same services as those routes, so they show each user what the API would. Like those routes, the endpoint is public: without a token it shows published posts only, and with `Authorization: Bearer <token>` it acts as that user, so it also shows the drafts they may see.
+
+It uses the Streamable HTTP transport statelessly: each request is answered on its own, with plain JSON, so `GET` and `DELETE` respond with `405 Method Not Allowed`. To add it to Claude Code:
+
+```bash
+claude mcp add --transport http nest-demo https://antoha805-nest-demo.duckdns.org/api/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+Leave out `--header` to read anonymously. Tokens expire after `JWT_EXPIRES_IN`, so log in again and update the header when they do. The server does not implement MCP's OAuth flow, which claude.ai connectors require.
 
 ## Notifications
 
