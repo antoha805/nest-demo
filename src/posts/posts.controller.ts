@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -16,7 +15,6 @@ import {
 import type { AuthenticatedUser } from '../auth/authenticated-user';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
-import { CaslAbilityFactory } from '../casl/casl-ability.factory';
 import { CheckPolicies } from '../casl/check-policies.decorator';
 import { CreatePostDto } from './dto/create-post.dto';
 import { FindPostsQueryDto } from './dto/find-posts-query.dto';
@@ -27,15 +25,12 @@ import { PostsService } from './posts.service';
 
 @Controller('posts')
 export class PostsController {
-  constructor(
-    private readonly postsService: PostsService,
-    private readonly caslAbilityFactory: CaslAbilityFactory,
-  ) {}
+  constructor(private readonly postsService: PostsService) {}
 
   @Post()
   @CheckPolicies((ability) => ability.can('create', PostEntity))
   create(@Body() dto: CreatePostDto, @CurrentUser() user: AuthenticatedUser) {
-    this.assertCanPublish(dto, user);
+    this.postsService.assertCanPublish(dto, user);
     return this.postsService.create(dto, user.id);
   }
 
@@ -64,7 +59,7 @@ export class PostsController {
     @Body() dto: UpdatePostDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    this.assertCanPublish(dto, user);
+    this.postsService.assertCanPublish(dto, user);
     return this.postsService.update(id, dto, user.id);
   }
 
@@ -102,18 +97,5 @@ export class PostsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.postsService.unlike(id, user);
-  }
-
-  // For publishing through `published` when creating or editing a post.
-  private assertCanPublish(
-    { published }: { published?: boolean },
-    user: AuthenticatedUser,
-  ): void {
-    if (
-      published &&
-      !this.caslAbilityFactory.createForUser(user).can('publish', PostEntity)
-    ) {
-      throw new ForbiddenException('You cannot publish posts');
-    }
   }
 }

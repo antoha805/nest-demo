@@ -2,6 +2,7 @@ import { raw } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AuthenticatedUser } from '../auth/authenticated-user';
+import { CaslAbilityFactory } from '../casl/casl-ability.factory';
 import { cursorPaginate, CursorPaginated } from '../common/cursor-paginated';
 import { definedFields } from '../common/defined-fields';
 import { CursorPaginationQueryDto } from '../common/dto/cursor-pagination-query.dto';
@@ -19,6 +20,9 @@ import { PostCommentedNotification } from './notifications/post-commented.notifi
 // What comment responses show, beyond the comment: the count is a lazy formula.
 const RESPONSE_POPULATE = ['author', 'likesCount'] as const;
 
+// What CommentsService.can checks.
+export type CommentAction = 'update' | 'delete';
+
 @Injectable()
 export class CommentsService {
   constructor(
@@ -26,7 +30,19 @@ export class CommentsService {
     private readonly postVisibilityService: PostVisibilityService,
     private readonly likesService: LikesService,
     private readonly notificationsService: NotificationsService,
+    private readonly caslAbilityFactory: CaslAbilityFactory,
   ) {}
+
+  // Whether the user can do this to the comment, for the permissions that
+  // depend on it. Used by CommentAccess and the MCP tools alike.
+  async can(
+    action: CommentAction,
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<boolean> {
+    const comment = await this.findVisible(id, user);
+    return this.caslAbilityFactory.createForUser(user).can(action, comment);
+  }
 
   async create(
     postId: string,

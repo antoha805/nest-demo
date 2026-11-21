@@ -43,5 +43,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PoliciesGuard },
   ],
+  // For the MCP tools that act on the user's own account.
+  exports: [AuthService, EmailVerificationService],
 })
 export class AuthModule {}

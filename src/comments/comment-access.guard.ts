@@ -12,10 +12,7 @@ import {
   AuthenticatedRequest,
   AuthenticatedUser,
 } from '../auth/authenticated-user';
-import { CaslAbilityFactory } from '../casl/casl-ability.factory';
-import { CommentsService } from './comments.service';
-
-type CommentAction = 'update' | 'delete';
+import { CommentAction, CommentsService } from './comments.service';
 
 const COMMENT_ACTION_KEY = 'commentAction';
 
@@ -24,7 +21,6 @@ export class CommentAccessGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly commentsService: CommentsService,
-    private readonly caslAbilityFactory: CaslAbilityFactory,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -42,9 +38,7 @@ export class CommentAccessGuard implements CanActivate {
         type: 'param',
       },
     );
-    const comment = await this.commentsService.findVisible(id, user);
-
-    return this.caslAbilityFactory.createForUser(user).can(action, comment);
+    return this.commentsService.can(action, id, user);
   }
 }
 

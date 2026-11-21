@@ -9,11 +9,13 @@ import {
 import { EntityManager } from '@mikro-orm/postgresql';
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { AuthenticatedUser } from '../auth/authenticated-user';
+import { CaslAbilityFactory } from '../casl/casl-ability.factory';
 import { CategoriesService } from '../categories/categories.service';
 import { Category } from '../categories/category.entity';
 import { Comment } from '../comments/comment.entity';
@@ -55,6 +57,9 @@ function searchFor(q: string): {
   };
 }
 
+// What PostsService.can checks, beyond the permissions that apply to every post.
+export type PostAction = 'update' | 'delete' | 'publish';
+
 export type PostWithComments = EntityDTO<Post> & {
   comments: CursorPaginated<Comment>;
 };
@@ -71,7 +76,32 @@ export class PostsService {
     private readonly commentsService: CommentsService,
     private readonly notificationsService: NotificationsService,
     private readonly notificationQueue: NotificationQueue,
+    private readonly caslAbilityFactory: CaslAbilityFactory,
   ) {}
+
+  // Whether the user can do this to the post, for the permissions that depend
+  // on it, such as .own ones. Used by PostAccess and the MCP tools alike.
+  async can(
+    action: PostAction,
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<boolean> {
+    const post = await this.findOne(id);
+    return this.caslAbilityFactory.createForUser(user).can(action, post);
+  }
+
+  // For publishing through `published` when creating or editing a post.
+  assertCanPublish(
+    { published }: { published?: boolean },
+    user: AuthenticatedUser,
+  ): void {
+    if (
+      published &&
+      !this.caslAbilityFactory.createForUser(user).can('publish', Post)
+    ) {
+      throw new ForbiddenException('You cannot publish posts');
+    }
+  }
 
   async create(
     { categoryId, published, ...dto }: CreatePostDto,

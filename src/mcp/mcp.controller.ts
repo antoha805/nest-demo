@@ -9,14 +9,15 @@ import {
   Post,
   Req,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../auth/authenticated-user';
 import { Public } from '../auth/decorators/public.decorator';
 import { McpServerFactory } from './mcp-server.factory';
 
-// The MCP endpoint, over Streamable HTTP. Public, like reading posts: with a
-// token the tools act as its user, so they can see the user's drafts.
+// The MCP endpoint, over Streamable HTTP. Public, as anyone can read: with a
+// token the tools act as its user, and the writing tools need one.
 @Public()
 @Controller('mcp')
 export class McpController {
@@ -30,6 +31,13 @@ export class McpController {
     @Req() request: AuthenticatedRequest,
     @Res() response: Response,
   ): Promise<void> {
+    // The guard ignores a bad token on public routes, but here that would
+    // quietly turn a client whose token expired into an anonymous one.
+    if (request.headers.authorization && !request.user) {
+      response.setHeader('WWW-Authenticate', 'Bearer error="invalid_token"');
+      throw new UnauthorizedException('The token is invalid or expired');
+    }
+
     const server = this.mcpServerFactory.create(request.user);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

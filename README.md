@@ -218,7 +218,7 @@ Removing a name from that file makes the next sync delete the permission and all
 | PUT    | `/api/notifications/:id/read`   | Any logged-in user                             | Mark a notification as read                                |
 | DELETE | `/api/notifications/:id/read`   | Any logged-in user                             | Mark a notification as unread                              |
 | POST   | `/api/notifications/read-all`   | Any logged-in user                             | Mark all your notifications as read                        |
-| POST   | `/api/mcp`                      | Public                                         | The MCP server, see [MCP](#mcp)                            |
+| POST   | `/api/mcp`                      | Public, each tool as its route                 | The MCP server, see [MCP](#mcp)                            |
 
 A category that still has posts cannot be deleted (`409 Conflict`). Categories return `postsCount`, which only counts published posts, so it is the same for every user and does not reveal drafts.
 
@@ -234,15 +234,23 @@ Liking and unliking are idempotent and respond with `204 No Content`. Posts and 
 
 ## MCP
 
-`/api/mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server, so AI clients such as Claude Code can read the blog. It is built on the official SDK, `@modelcontextprotocol/sdk`, in `src/mcp`, and offers read-only tools:
+`/api/mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server, so AI clients such as Claude Code can use the blog. It is built on the official SDK, `@modelcontextprotocol/sdk`, in `src/mcp`. Its tools match the REST routes:
 
-| Tool              | Description                                                         |
-| ----------------- | ------------------------------------------------------------------- |
-| `search_posts`    | List posts, or search them with `q`, as `GET /api/posts` does       |
-| `get_post`        | Get a post with its first page of comments, as `GET /api/posts/:id` |
-| `list_categories` | List categories, as `GET /api/categories`                           |
+| Area          | Tools                                                                                                               |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Posts         | `search_posts`, `get_post`, `create_post`, `update_post`, `delete_post`, `publish_post`, `like_post`, `unlike_post` |
+| Comments      | `list_comments`, `create_comment`, `update_comment`, `delete_comment`, `like_comment`, `unlike_comment`             |
+| Categories    | `list_categories`, `get_category`, `create_category`, `update_category`, `delete_category`                          |
+| Notifications | `list_notifications`, `mark_notification_read`, `mark_notification_unread`, `mark_all_notifications_read`           |
+| Your account  | `get_me`, `update_me`, `verify_email`, `resend_verification_code`                                                   |
 
-The tools call the same services as those routes, so they show each user what the API would. Like those routes, the endpoint is public: without a token it shows published posts only, and with `Authorization: Bearer <token>` it acts as that user, so it also shows the drafts they may see.
+Each tool calls the same service as its route, after the same checks in the same order: the token, the permission, then the input, validated by the same DTOs. Checks that depend on the record, like `posts.update.own`, are in `PostsService.can()` and `CommentsService.can()`, which the `PostAccess` and `CommentAccess` guards use too, so a rule changed there applies to both. Tools that cannot be undone, deleting and publishing, are marked as destructive, so clients ask before running them. Errors come back as tool errors with the same message as the REST response.
+
+Logging in, registering, users, roles and the live notifications stream are REST only. A client sends the token from its configuration, so it could not use one a tool returned.
+
+There are also two prompts, which clients offer in a menu: `draft_post` writes a post on a topic and saves it as a draft, completing category names as you type, and `summarize_comments` summarizes a post's comments.
+
+The endpoint is public, as anyone can read: without a token the tools show published posts only, and the writing tools ask for one. With `Authorization: Bearer <token>` they act as that user. A token that is invalid or has expired gets `401 Unauthorized`, rather than quietly reading as anonymous.
 
 It uses the Streamable HTTP transport statelessly: each request is answered on its own, with plain JSON, so `GET` and `DELETE` respond with `405 Method Not Allowed`. To add it to Claude Code:
 

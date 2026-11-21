@@ -535,7 +535,12 @@ describe('API (e2e)', () => {
       await http().delete(`/api/categories/${categoryId}`).expect(204);
     });
 
-    it('initializes and lists its read-only tools', async () => {
+    const errorText = (result: ToolResult) => {
+      expect(result.isError).toBe(true);
+      return result.content[0].text;
+    };
+
+    it('initializes and lists its tools with their hints', async () => {
       const init = await rpc('initialize', {
         protocolVersion: '2025-06-18',
         capabilities: {},
@@ -548,17 +553,292 @@ describe('API (e2e)', () => {
       const list = await rpc('tools/list', {}).expect(200);
       const { tools } = (
         list.body as {
-          result: { tools: { name: string; annotations: object }[] };
+          result: {
+            tools: {
+              name: string;
+              annotations: {
+                readOnlyHint?: boolean;
+                destructiveHint?: boolean;
+              };
+            }[];
+          };
         }
       ).result;
-      expect(tools.map((tool) => tool.name).sort()).toEqual([
+      const hints = Object.fromEntries(
+        tools.map((tool) => [tool.name, tool.annotations]),
+      );
+      expect(Object.keys(hints).sort()).toEqual([
+        'create_category',
+        'create_comment',
+        'create_post',
+        'delete_category',
+        'delete_comment',
+        'delete_post',
+        'get_category',
+        'get_me',
         'get_post',
+        'like_comment',
+        'like_post',
         'list_categories',
+        'list_comments',
+        'list_notifications',
+        'mark_all_notifications_read',
+        'mark_notification_read',
+        'mark_notification_unread',
+        'publish_post',
+        'resend_verification_code',
         'search_posts',
+        'unlike_comment',
+        'unlike_post',
+        'update_category',
+        'update_comment',
+        'update_me',
+        'update_post',
+        'verify_email',
       ]);
-      for (const tool of tools) {
-        expect(tool.annotations).toMatchObject({ readOnlyHint: true });
+      expect(hints.search_posts).toMatchObject({ readOnlyHint: true });
+      expect(hints.create_post).toMatchObject({
+        readOnlyHint: false,
+        destructiveHint: false,
+      });
+      for (const name of ['delete_post', 'publish_post', 'delete_comment']) {
+        expect(hints[name]).toMatchObject({ destructiveHint: true });
       }
+    });
+
+    it('rejects a bad token, and needs one to write', async () => {
+      const bad = await rpc('tools/list', {}, withToken('not-a-token')).expect(
+        401,
+      );
+      expect(bad.headers['www-authenticate']).toContain('invalid_token');
+
+      const anonymousWrite = await callTool('create_post', {
+        title: 'T',
+        content: 'C',
+        categoryId,
+      });
+      expect(errorText(anonymousWrite)).toContain('send a bearer token');
+      expect(errorText(await callTool('get_me', {}))).toContain(
+        'send a bearer token',
+      );
+
+      // Unconfirmed users have no permissions yet, as for REST.
+      const unverified = await register({ verified: false });
+      const forbidden = await callTool(
+        'create_post',
+        { title: 'T', content: 'C', categoryId },
+        withToken(unverified.token),
+      );
+      expect(errorText(forbidden)).toBe(
+        'You do not have permission to do this',
+      );
+    });
+
+    it('writes posts with the permissions of the REST routes', async () => {
+      const author = withToken(authorToken);
+      const other = withToken((await register()).token);
+
+      // Validated by the same DTOs as REST.
+      const tooLong = await callTool(
+        'create_post',
+        { title: 'x'.repeat(201), content: 'C', categoryId },
+        author,
+      );
+      expect(errorText(tooLong)).toContain('title must be shorter');
+
+      // Members cannot publish, neither at once nor later.
+      const publishAtOnce = await callTool(
+        'create_post',
+        { title: 'T', content: 'C', categoryId, published: true },
+        author,
+      );
+      expect(errorText(publishAtOnce)).toBe('You cannot publish posts');
+
+      const created = parse<Post>(
+        await callTool(
+          'create_post',
+          { title: 'Draft', content: 'C', categoryId },
+          author,
+        ),
+      );
+      expect(created).toMatchObject({ title: 'Draft', publishedAt: null });
+      const { id } = created;
+
+      expect(errorText(await callTool('publish_post', { id }, author))).toBe(
+        'You do not have permission to do this',
+      );
+
+      // .own permissions: the author can edit, another member cannot.
+      const updated = await callTool(
+        'update_post',
+        { id, title: 'Edited' },
+        author,
+      );
+      expect(parse<Post>(updated)).toMatchObject({ title: 'Edited' });
+      expect(
+        errorText(await callTool('update_post', { id, title: 'Nope' }, other)),
+      ).toBe('You do not have permission to do this');
+      expect(errorText(await callTool('delete_post', { id }, other))).toBe(
+        'You do not have permission to do this',
+      );
+
+      expect(await callTool('publish_post', { id }, http())).toMatchObject({
+        content: [{ text: 'Post published' }],
+      });
+      await callTool('like_post', { id }, other);
+      const liked = parse<Post>(await callTool('get_post', { id }, other));
+      expect(liked).toMatchObject({
+        likesCount: 1,
+        myLikeAt: expect.any(String) as string,
+      });
+      await callTool('unlike_post', { id }, other);
+
+      expect(await callTool('delete_post', { id }, author)).toMatchObject({
+        content: [{ text: 'Post deleted' }],
+      });
+      expect(errorText(await callTool('get_post', { id }))).toBe(
+        'The requested record was not found',
+      );
+    });
+
+    it('comments, and notifies the author', async () => {
+      const author = withToken(authorToken);
+      const commenterToken = (await register()).token;
+      const commenter = withToken(commenterToken);
+      await callTool('mark_all_notifications_read', {}, author);
+      // The author's own post, so they are the one notified.
+      const own = await author
+        .post('/api/posts')
+        .send({ title: 'Commented', content: 'C', categoryId })
+        .expect(201);
+      const postId = (own.body as Post).id;
+      await publish(postId);
+
+      const comment = parse<Comment>(
+        await callTool(
+          'create_comment',
+          { postId, content: 'Nice' },
+          commenter,
+        ),
+      );
+      // Others cannot comment on a draft they cannot see.
+      expect(
+        errorText(
+          await callTool(
+            'create_comment',
+            { postId: draftId, content: 'Hidden' },
+            commenter,
+          ),
+        ),
+      ).toBe('The requested record was not found');
+
+      const page = parse<CursorPaginated<Comment>>(
+        await callTool('list_comments', { postId, limit: 1 }),
+      );
+      expect(page.data.map((c) => c.id)).toEqual([comment.id]);
+
+      expect(
+        errorText(
+          await callTool(
+            'update_comment',
+            { id: comment.id, content: 'Changed' },
+            author,
+          ),
+        ),
+      ).toBe('You do not have permission to do this');
+      const edited = await callTool(
+        'update_comment',
+        { id: comment.id, content: 'Changed' },
+        commenter,
+      );
+      expect(parse<Comment>(edited)).toMatchObject({ content: 'Changed' });
+      await callTool('like_comment', { id: comment.id }, author);
+
+      // The post's author hears about the comment.
+      const me = parse<{ unreadNotificationsCount: number }>(
+        await callTool('get_me', {}, author),
+      );
+      expect(me.unreadNotificationsCount).toBeGreaterThan(0);
+      const notifications = parse<CursorPaginated<{ id: string }>>(
+        await callTool('list_notifications', { limit: 1 }, author),
+      );
+      const [newest] = notifications.data;
+      await callTool('mark_notification_read', { id: newest.id }, author);
+      await callTool('mark_all_notifications_read', {}, author);
+      const after = parse<{ unreadNotificationsCount: number }>(
+        await callTool('get_me', {}, author),
+      );
+      expect(after.unreadNotificationsCount).toBe(0);
+
+      expect(
+        await callTool('delete_comment', { id: comment.id }, commenter),
+      ).toMatchObject({ content: [{ text: 'Comment deleted' }] });
+      await http().delete(`/api/posts/${postId}`).expect(204);
+    });
+
+    it('manages categories and the account', async () => {
+      const member = withToken(authorToken);
+      expect(
+        errorText(
+          await callTool('create_category', { name: uniqueName() }, member),
+        ),
+      ).toBe('You do not have permission to do this');
+
+      const category = parse<Category>(
+        await callTool('create_category', { name: uniqueName() }, http()),
+      );
+      const updated = await callTool(
+        'update_category',
+        { id: category.id, description: 'About things' },
+        http(),
+      );
+      expect(parse<Category>(updated)).toMatchObject({
+        description: 'About things',
+      });
+      expect(
+        parse<Category>(await callTool('get_category', { id: category.id })),
+      ).toMatchObject({ name: category.name });
+      await callTool('delete_category', { id: category.id }, http());
+
+      const nickname = uniqueNickname();
+      const profile = await callTool('update_me', { nickname }, member);
+      expect(parse<{ nickname: string }>(profile)).toMatchObject({ nickname });
+      expect(
+        errorText(await callTool('update_me', { phone: '123' }, member)),
+      ).toContain('international format');
+      // Confirming again does nothing, and resending says why not.
+      expect(
+        await callTool('verify_email', { code: '123456' }, member),
+      ).toMatchObject({ content: [{ text: 'Email confirmed' }] });
+      expect(
+        errorText(await callTool('resend_verification_code', {}, member)),
+      ).toBe('Your email is already confirmed');
+    });
+
+    it('offers prompts, with category names to complete', async () => {
+      const list = await rpc('prompts/list', {}).expect(200);
+      const names = (
+        list.body as { result: { prompts: { name: string }[] } }
+      ).result.prompts.map((prompt) => prompt.name);
+      expect(names.sort()).toEqual(['draft_post', 'summarize_comments']);
+
+      const prompt = await rpc('prompts/get', {
+        name: 'draft_post',
+        arguments: { topic: 'Tomato soup' },
+      }).expect(200);
+      expect(JSON.stringify(prompt.body)).toContain('Tomato soup');
+
+      const { name } = (
+        await anonymous().get(`/api/categories/${categoryId}`).expect(200)
+      ).body as Category;
+      const completion = await rpc('completion/complete', {
+        ref: { type: 'ref/prompt', name: 'draft_post' },
+        argument: { name: 'category', value: name.slice(0, 10) },
+      }).expect(200);
+      expect(
+        (completion.body as { result: { completion: { values: string[] } } })
+          .result.completion.values,
+      ).toContain(name);
     });
 
     it('shows drafts only to those who can see them', async () => {

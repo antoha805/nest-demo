@@ -12,10 +12,7 @@ import {
   AuthenticatedRequest,
   AuthenticatedUser,
 } from '../auth/authenticated-user';
-import { CaslAbilityFactory } from '../casl/casl-ability.factory';
-import { PostsService } from './posts.service';
-
-type PostAction = 'update' | 'delete' | 'publish';
+import { PostAction, PostsService } from './posts.service';
 
 const POST_ACTION_KEY = 'postAction';
 
@@ -24,7 +21,6 @@ export class PostAccessGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly postsService: PostsService,
-    private readonly caslAbilityFactory: CaslAbilityFactory,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -41,11 +37,7 @@ export class PostAccessGuard implements CanActivate {
         type: 'param',
       },
     );
-    const post = await this.postsService.findOne(id);
-
-    return this.caslAbilityFactory
-      .createForUser(request.user as AuthenticatedUser)
-      .can(action, post);
+    return this.postsService.can(action, id, request.user as AuthenticatedUser);
   }
 }
 
