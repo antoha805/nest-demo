@@ -53,12 +53,9 @@ export class Post {
     deleteRule: 'restrict',
     updateRule: 'no action',
   })
+  // Responses show it whole, so its id is category.id. Clients send it as
+  // categoryId.
   category!: Category;
-
-  @Property({ type: 'uuid', persist: false })
-  get categoryId(): Opt<string> {
-    return this.category.id;
-  }
 
   // Null for posts from before authors, and after the author is deleted.
   // Mapped to the id alone, as no route returns the author.

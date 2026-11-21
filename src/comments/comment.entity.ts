@@ -50,7 +50,9 @@ export class Comment {
   })
   author: User | null = null;
 
-  @Property({ type: 'uuid', persist: false })
+  // For the code, such as the .own permission rules. Hidden, as responses
+  // show it as author.id.
+  @Property({ type: 'uuid', persist: false, hidden: true })
   get authorId(): Opt<string> | null {
     return this.author?.id ?? null;
   }

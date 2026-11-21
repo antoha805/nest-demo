@@ -183,6 +183,8 @@ describe('API (e2e)', () => {
     const post = created.body as Post;
     expect(post.publishedAt).toBeNull();
     expect(post).not.toHaveProperty('published');
+    // Shown once, as category.id.
+    expect(post).not.toHaveProperty('categoryId');
     expect(post.category.id).toBe(first.id);
 
     await http().delete(`/api/categories/${first.id}`).expect(409);
@@ -211,7 +213,6 @@ describe('API (e2e)', () => {
       title: 'New title',
       content: 'Content',
       publishedAt: null,
-      categoryId: second.id,
       category: { id: second.id },
     });
 
@@ -1528,9 +1529,11 @@ describe('API (e2e)', () => {
         expect(comment).toMatchObject({
           content: 'Nice',
           postId: post.id,
-          authorId,
+          author: { id: authorId },
           likesCount: 0,
         });
+        // Shown once, as author.id.
+        expect(comment).not.toHaveProperty('authorId');
 
         const listed = await anonymous().get(url).expect(200);
         expect(
@@ -1550,7 +1553,10 @@ describe('API (e2e)', () => {
           .patch(commentUrl)
           .send({ content: 'Edited' })
           .expect(200);
-        expect(edited.body).toMatchObject({ content: 'Edited', authorId });
+        expect(edited.body).toMatchObject({
+          content: 'Edited',
+          author: { id: authorId },
+        });
 
         await withToken(token).delete(commentUrl).expect(204);
         await withToken(token).delete(commentUrl).expect(404);
@@ -2019,7 +2025,7 @@ describe('API (e2e)', () => {
           .get(`/api/posts/${post.id}/comments`)
           .expect(200);
         expect((listed.body as CursorPaginated<Comment>).data).toMatchObject([
-          { id: comment.id, authorId: null, author: null },
+          { id: comment.id, author: null },
         ]);
       });
 

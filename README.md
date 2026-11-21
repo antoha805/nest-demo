@@ -222,13 +222,15 @@ Removing a name from that file makes the next sync delete the permission and all
 
 A category that still has posts cannot be deleted (`409 Conflict`). Categories return `postsCount`, which only counts published posts, so it is the same for every user and does not reveal drafts.
 
+Posts return their category whole, as `category`, and are given it as `categoryId` when created or edited.
+
 A post's `authorId` is set to the logged-in user when it is created and cannot be changed through the API. It is `null` for older posts and sample data, and becomes `null` if the author is deleted.
 
 The `.all` permissions apply to every post, and the `.own` ones only to posts the user wrote. Posts with no author need `.all`.
 
 Posts are drafts until published, and publishing is final: a published post cannot become a draft again, even when it is edited. A post is published by sending `"published": true` when creating it or editing a draft, or with `PUT /api/posts/:id/publish`. All three need `posts.publish`, otherwise `403 Forbidden`, but the last one does not need the right to edit the post, so reviewers can publish posts they cannot change. It is idempotent and responds with `204 No Content`. Editing accepts only `true` for `published` (`false` is a `400 Bad Request`). Posts return `publishedAt`, when they were published, or `null` for drafts. Published posts are public. Drafts are visible only to their author and to users with `posts.publish`, and return `404 Not Found` to anyone else, so send the token on `GET` requests to see them.
 
-Comments and likes follow the post: every route above returns `404 Not Found` if the user cannot read the post. Comments stay when their author is deleted, with `authorId` set to `null`, and are deleted with their post. Posts return their total as `commentsCount`, and `myLastCommentAt` holds when the logged-in user last commented on them, or `null` if they have not or no token was sent. Comments can only be edited by their author; `comments.delete.all` is for moderation.
+Comments and likes follow the post: every route above returns `404 Not Found` if the user cannot read the post. Comments return their author as `author`, with only the `id` and `nickname`. They stay when their author is deleted, with `author` set to `null`, and are deleted with their post. Posts return their total as `commentsCount`, and `myLastCommentAt` holds when the logged-in user last commented on them, or `null` if they have not or no token was sent. Comments can only be edited by their author; `comments.delete.all` is for moderation.
 
 Liking and unliking are idempotent and respond with `204 No Content`. Posts and comments return their total as `likesCount`, and `myLikeAt` holds when the logged-in user liked them, or `null` if they have not or no token was sent. The `likes` table is polymorphic: `likeableType` and `likeableId` point to a post or comment. As Postgres cannot enforce a foreign key on that, database triggers delete the likes along with their post or comment. Adding a new likeable type needs a new enum value and such a trigger.
 
