@@ -14,6 +14,9 @@ export interface AuthenticatedUser {
 
 export interface AuthenticatedRequest extends Request {
   user?: AuthenticatedUser;
+  // The scopes of an MCP client's token, such as mcp:write. Undefined for the
+  // tokens of POST /api/auth/login, which allow all the user may do.
+  tokenScopes?: string[];
 }
 
 export function toAuthenticatedUser(user: User): AuthenticatedUser {

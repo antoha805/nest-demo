@@ -3,6 +3,9 @@ import { Migrator } from '@mikro-orm/migrations';
 import { defineConfig } from '@mikro-orm/postgresql';
 import { Category } from '../categories/category.entity';
 import { EmailVerification } from '../auth/email-verification.entity';
+import { OAuthAuthorizationCode } from '../auth/oauth/oauth-authorization-code.entity';
+import { OAuthClient } from '../auth/oauth/oauth-client.entity';
+import { OAuthGrant } from '../auth/oauth/oauth-grant.entity';
 import { Comment } from '../comments/comment.entity';
 import { EnvironmentVariables } from '../config/env.validation';
 import { Like } from '../likes/like.entity';
@@ -33,6 +36,9 @@ export function createOrmConfig(env: DatabaseEnv) {
       Like,
       DatabaseNotification,
       EmailVerification,
+      OAuthClient,
+      OAuthAuthorizationCode,
+      OAuthGrant,
       User,
       Role,
       Permission,

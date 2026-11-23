@@ -14,6 +14,7 @@ import { Migration20261113120000_AddUserPhone } from './Migration20261113120000_
 import { Migration20261116120000_MakeNotificationsPolymorphic } from './Migration20261116120000_MakeNotificationsPolymorphic';
 import { Migration20261116140000_AddPostAnnouncedAt } from './Migration20261116140000_AddPostAnnouncedAt';
 import { Migration20261117120000_ReplacePostPublishedWithPublishedAt } from './Migration20261117120000_ReplacePostPublishedWithPublishedAt';
+import { Migration20261123120000_AddOAuth } from './Migration20261123120000_AddOAuth';
 
 // Run in this order. `npm run migration:create` writes new ones, which then have
 // to be added at the end.
@@ -34,4 +35,5 @@ export const migrations = [
   Migration20261116120000_MakeNotificationsPolymorphic,
   Migration20261116140000_AddPostAnnouncedAt,
   Migration20261117120000_ReplacePostPublishedWithPublishedAt,
+  Migration20261123120000_AddOAuth,
 ];

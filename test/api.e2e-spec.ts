@@ -1,6 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Server } from 'node:http';
 import { AddressInfo } from 'node:net';
+import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { RequestContext } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { getQueueToken } from '@nestjs/bullmq';
@@ -10,9 +11,15 @@ import { Job, Queue } from 'bullmq';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { configureApp } from './../src/app-setup';
 import { AuthService } from './../src/auth/auth.service';
 import { EmailVerification } from './../src/auth/email-verification.entity';
 import { EmailVerificationService } from './../src/auth/email-verification.service';
+import { OAuthProvider } from './../src/auth/oauth/oauth.provider';
+import {
+  MCP_READ_SCOPE,
+  MCP_WRITE_SCOPE,
+} from './../src/auth/oauth/oauth-urls';
 import { syncPermissions } from './../src/database/sync-permissions';
 import { Category } from './../src/categories/category.entity';
 import { Comment } from './../src/comments/comment.entity';
@@ -126,7 +133,7 @@ describe('API (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api');
+    configureApp(app);
     await app.init();
     // Jobs run only when a test runs them, so publishing posts does not notify
     // the users of other tests meanwhile.
@@ -476,31 +483,58 @@ describe('API (e2e)', () => {
       isError?: boolean;
     };
 
+    type McpClient = ReturnType<typeof anonymous>;
+
     let categoryId: string;
     let publishedId: string;
     let draftId: string;
     let authorToken: string;
+    // MCP clients signed in as the admin, the author of the draft, and a
+    // member with no posts, who sees what anyone may read.
+    let admin: McpClient;
+    let author: McpClient;
+    let reader: McpClient;
+    let oauthClient: OAuthClientInformationFull;
     // In every post, so search_posts finds only this test's posts.
     const word = randomUUID()
       .replaceAll('-', '')
       .replace(/\d/g, (digit) => 'ghijklmnop'[Number(digit)]);
 
+    // An MCP client signed in as the user of a login token. Skips the consent
+    // page and PKCE, which the OAuth tests below go through, as the page's
+    // rate limit allows fewer sign-ins than these tests need.
+    const mcpAs = async (
+      loginToken: string,
+      { write = true } = {},
+    ): Promise<McpClient> => {
+      const { id } = await currentUser(loginToken);
+      const provider = app.get(OAuthProvider);
+      const redirect = await provider.approve(
+        {
+          clientId: oauthClient.client_id,
+          redirectUri: oauthClient.redirect_uris[0],
+          codeChallenge: 'checked-by-the-token-endpoint',
+          scope: `${MCP_READ_SCOPE} ${MCP_WRITE_SCOPE}`,
+        },
+        id,
+        write,
+      );
+      const code = new URL(redirect).searchParams.get('code')!;
+      const tokens = await provider.exchangeAuthorizationCode(
+        oauthClient,
+        code,
+      );
+      return withToken(tokens.access_token);
+    };
+
     // Clients must accept both, though the server answers with plain JSON.
-    const rpc = (
-      method: string,
-      params: object,
-      client: ReturnType<typeof anonymous> = anonymous(),
-    ) =>
+    const rpc = (method: string, params: object, client: McpClient = reader) =>
       client
         .post('/api/mcp')
         .set('Accept', 'application/json, text/event-stream')
         .send({ jsonrpc: '2.0', id: 1, method, params });
 
-    const callTool = async (
-      name: string,
-      args: object,
-      client?: ReturnType<typeof anonymous>,
-    ) => {
+    const callTool = async (name: string, args: object, client?: McpClient) => {
       const response = await rpc(
         'tools/call',
         { name, arguments: args },
@@ -513,8 +547,7 @@ describe('API (e2e)', () => {
 
     beforeAll(async () => {
       categoryId = (await createCategory()).id;
-      const author = await register();
-      authorToken = author.token;
+      authorToken = (await register()).token;
       // Only the admin may publish, so the author's post stays a draft.
       const published = await http()
         .post('/api/posts')
@@ -527,6 +560,15 @@ describe('API (e2e)', () => {
         .send({ title: word, content: 'Draft', categoryId })
         .expect(201);
       draftId = (draft.body as Post).id;
+
+      oauthClient = await app.get(OAuthProvider).clientsStore.registerClient!({
+        client_id: randomUUID(),
+        redirect_uris: ['https://client.test/callback'],
+        token_endpoint_auth_method: 'none',
+      } as OAuthClientInformationFull);
+      admin = await mcpAs(adminToken);
+      author = await mcpAs(authorToken);
+      reader = await mcpAs((await register()).token);
     });
 
     afterAll(async () => {
@@ -607,28 +649,27 @@ describe('API (e2e)', () => {
       }
     });
 
-    it('rejects a bad token, and needs one to write', async () => {
+    it('needs an OAuth token, and says where to get one', async () => {
+      const metadata =
+        'resource_metadata="https://app.test/.well-known/oauth-protected-resource/api/mcp"';
+      const missing = await rpc('tools/list', {}, anonymous()).expect(401);
+      expect(missing.headers['www-authenticate']).toBe(`Bearer ${metadata}`);
+
       const bad = await rpc('tools/list', {}, withToken('not-a-token')).expect(
         401,
       );
-      expect(bad.headers['www-authenticate']).toContain('invalid_token');
-
-      const anonymousWrite = await callTool('create_post', {
-        title: 'T',
-        content: 'C',
-        categoryId,
-      });
-      expect(errorText(anonymousWrite)).toContain('send a bearer token');
-      expect(errorText(await callTool('get_me', {}))).toContain(
-        'send a bearer token',
+      expect(bad.headers['www-authenticate']).toBe(
+        `Bearer error="invalid_token", ${metadata}`,
       );
+      // Login tokens are for the REST API only.
+      await rpc('tools/list', {}, withToken(authorToken)).expect(401);
 
       // Unconfirmed users have no permissions yet, as for REST.
       const unverified = await register({ verified: false });
       const forbidden = await callTool(
         'create_post',
         { title: 'T', content: 'C', categoryId },
-        withToken(unverified.token),
+        await mcpAs(unverified.token),
       );
       expect(errorText(forbidden)).toBe(
         'You do not have permission to do this',
@@ -636,8 +677,7 @@ describe('API (e2e)', () => {
     });
 
     it('writes posts with the permissions of the REST routes', async () => {
-      const author = withToken(authorToken);
-      const other = withToken((await register()).token);
+      const other = await mcpAs((await register()).token);
 
       // Validated by the same DTOs as REST.
       const tooLong = await callTool(
@@ -683,7 +723,7 @@ describe('API (e2e)', () => {
         'You do not have permission to do this',
       );
 
-      expect(await callTool('publish_post', { id }, http())).toMatchObject({
+      expect(await callTool('publish_post', { id }, admin)).toMatchObject({
         content: [{ text: 'Post published' }],
       });
       await callTool('like_post', { id }, other);
@@ -703,12 +743,10 @@ describe('API (e2e)', () => {
     });
 
     it('comments, and notifies the author', async () => {
-      const author = withToken(authorToken);
-      const commenterToken = (await register()).token;
-      const commenter = withToken(commenterToken);
+      const commenter = await mcpAs((await register()).token);
       await callTool('mark_all_notifications_read', {}, author);
       // The author's own post, so they are the one notified.
-      const own = await author
+      const own = await withToken(authorToken)
         .post('/api/posts')
         .send({ title: 'Commented', content: 'C', categoryId })
         .expect(201);
@@ -778,7 +816,7 @@ describe('API (e2e)', () => {
     });
 
     it('manages categories and the account', async () => {
-      const member = withToken(authorToken);
+      const member = author;
       expect(
         errorText(
           await callTool('create_category', { name: uniqueName() }, member),
@@ -786,12 +824,12 @@ describe('API (e2e)', () => {
       ).toBe('You do not have permission to do this');
 
       const category = parse<Category>(
-        await callTool('create_category', { name: uniqueName() }, http()),
+        await callTool('create_category', { name: uniqueName() }, admin),
       );
       const updated = await callTool(
         'update_category',
         { id: category.id, description: 'About things' },
-        http(),
+        admin,
       );
       expect(parse<Category>(updated)).toMatchObject({
         description: 'About things',
@@ -799,7 +837,7 @@ describe('API (e2e)', () => {
       expect(
         parse<Category>(await callTool('get_category', { id: category.id })),
       ).toMatchObject({ name: category.name });
-      await callTool('delete_category', { id: category.id }, http());
+      await callTool('delete_category', { id: category.id }, admin);
 
       const nickname = uniqueNickname();
       const profile = await callTool('update_me', { nickname }, member);
@@ -843,13 +881,13 @@ describe('API (e2e)', () => {
     });
 
     it('shows drafts only to those who can see them', async () => {
-      const ids = async (client?: ReturnType<typeof anonymous>) =>
+      const ids = async (client?: McpClient) =>
         parse<Paginated<Post>>(
           await callTool('search_posts', { q: word }, client),
         ).data.map((post) => post.id);
 
       await expect(ids()).resolves.toEqual([publishedId]);
-      await expect(ids(withToken(authorToken))).resolves.toEqual(
+      await expect(ids(author)).resolves.toEqual(
         expect.arrayContaining([publishedId, draftId]),
       );
 
@@ -859,11 +897,7 @@ describe('API (e2e)', () => {
         content: [{ text: 'The requested record was not found' }],
       });
 
-      const own = await callTool(
-        'get_post',
-        { id: draftId },
-        withToken(authorToken),
-      );
+      const own = await callTool('get_post', { id: draftId }, author);
       expect(own.isError).toBeFalsy();
       expect(parse<Post>(own)).toMatchObject({
         id: draftId,
@@ -890,6 +924,281 @@ describe('API (e2e)', () => {
 
       await anonymous().get('/api/mcp').expect(405).expect('Allow', 'POST');
       await anonymous().delete('/api/mcp').expect(405);
+    });
+
+    // What a client such as claude.ai does: registers, sends the user to the
+    // consent page with a PKCE challenge, and swaps the code for tokens.
+    describe('OAuth', () => {
+      const redirectUri = 'https://client.test/callback';
+
+      const registerClient = async () => {
+        const response = await anonymous()
+          .post('/register')
+          .send({
+            redirect_uris: [redirectUri],
+            client_name: 'E2E <b>client</b>',
+            token_endpoint_auth_method: 'none',
+          })
+          .expect(201);
+        return (response.body as { client_id: string }).client_id;
+      };
+
+      const pkce = () => {
+        const verifier = randomBytes(32).toString('base64url');
+        const challenge = createHash('sha256')
+          .update(verifier)
+          .digest('base64url');
+        return { verifier, challenge };
+      };
+
+      const authorize = (
+        clientId: string,
+        challenge: string,
+        params: Record<string, string> = {},
+      ) =>
+        anonymous()
+          .get('/authorize')
+          .query({
+            response_type: 'code',
+            client_id: clientId,
+            redirect_uri: redirectUri,
+            code_challenge: challenge,
+            code_challenge_method: 'S256',
+            state: 'some-state',
+            scope: `${MCP_READ_SCOPE} ${MCP_WRITE_SCOPE}`,
+            resource: 'https://app.test/api/mcp',
+            ...params,
+          });
+
+      // The signed request in the consent page's form.
+      const requestTokenOf = (html: string) =>
+        /name="request" value="([^"]+)"/.exec(html)![1];
+
+      const consent = (form: Record<string, string>) =>
+        anonymous().post('/api/oauth/consent').type('form').send(form);
+
+      const exchange = (form: Record<string, string>) =>
+        anonymous().post('/token').type('form').send(form);
+
+      type Tokens = {
+        access_token: string;
+        refresh_token: string;
+        token_type: string;
+        expires_in: number;
+        scope: string;
+      };
+
+      // Through every step, as the user of the given email.
+      const signIn = async (email: string, { write = true } = {}) => {
+        const clientId = await registerClient();
+        const { verifier, challenge } = pkce();
+        const page = await authorize(clientId, challenge).expect(200);
+        const approved = await consent({
+          request: requestTokenOf(page.text),
+          decision: 'allow',
+          email,
+          password,
+          ...(write ? { write: 'on' } : {}),
+        }).expect(303);
+        const code = new URL(approved.headers.location).searchParams.get(
+          'code',
+        )!;
+        const tokens = await exchange({
+          grant_type: 'authorization_code',
+          code,
+          code_verifier: verifier,
+          client_id: clientId,
+          redirect_uri: redirectUri,
+        }).expect(200);
+        return { clientId, tokens: tokens.body as Tokens };
+      };
+
+      it('publishes the metadata that leads clients to sign in', async () => {
+        const resource = await anonymous()
+          .get('/.well-known/oauth-protected-resource/api/mcp')
+          .expect(200);
+        expect(resource.body).toEqual({
+          resource: 'https://app.test/api/mcp',
+          authorization_servers: ['https://app.test/'],
+          scopes_supported: [MCP_READ_SCOPE, MCP_WRITE_SCOPE],
+          resource_name: 'nest-demo',
+        });
+
+        const server = await anonymous()
+          .get('/.well-known/oauth-authorization-server')
+          .expect(200);
+        expect(server.body).toMatchObject({
+          issuer: 'https://app.test/',
+          authorization_endpoint: 'https://app.test/authorize',
+          token_endpoint: 'https://app.test/token',
+          registration_endpoint: 'https://app.test/register',
+          revocation_endpoint: 'https://app.test/revoke',
+          code_challenge_methods_supported: ['S256'],
+        });
+      });
+
+      it('signs a user in with PKCE, and refreshes the token', async () => {
+        const { email, nickname, token: loginToken } = await register();
+        const clientId = await registerClient();
+        const { verifier, challenge } = pkce();
+
+        const page = await authorize(clientId, challenge).expect(200);
+        // The name the client chose is escaped, and where it sends the user
+        // is shown, as the client cannot fake that.
+        expect(page.text).toContain('E2E &lt;b&gt;client&lt;/b&gt;');
+        expect(page.text).toContain('client.test');
+        expect(page.headers['x-frame-options']).toBe('DENY');
+        const request = requestTokenOf(page.text);
+
+        const wrong = await consent({
+          request,
+          decision: 'allow',
+          email,
+          password: 'wrong password',
+          write: 'on',
+        }).expect(401);
+        expect(wrong.text).toContain('Invalid email or password');
+
+        const approved = await consent({
+          request,
+          decision: 'allow',
+          email,
+          password,
+          write: 'on',
+        }).expect(303);
+        const location = new URL(approved.headers.location);
+        expect(location.origin + location.pathname).toBe(redirectUri);
+        expect(location.searchParams.get('state')).toBe('some-state');
+        const code = location.searchParams.get('code')!;
+
+        // Only with the verifier that matches the challenge.
+        const stolen = await exchange({
+          grant_type: 'authorization_code',
+          code,
+          code_verifier: pkce().verifier,
+          client_id: clientId,
+        }).expect(400);
+        expect(stolen.body).toMatchObject({ error: 'invalid_grant' });
+
+        const exchanged = await exchange({
+          grant_type: 'authorization_code',
+          code,
+          code_verifier: verifier,
+          client_id: clientId,
+          redirect_uri: redirectUri,
+        }).expect(200);
+        const tokens = exchanged.body as Tokens;
+        expect(tokens).toMatchObject({
+          token_type: 'Bearer',
+          expires_in: 3600,
+          scope: `${MCP_READ_SCOPE} ${MCP_WRITE_SCOPE}`,
+        });
+
+        // The code works once.
+        await exchange({
+          grant_type: 'authorization_code',
+          code,
+          code_verifier: verifier,
+          client_id: clientId,
+        }).expect(400);
+
+        const me = parse<{ nickname: string }>(
+          await callTool('get_me', {}, withToken(tokens.access_token)),
+        );
+        expect(me.nickname).toBe(nickname);
+        // MCP tokens are for /api/mcp only.
+        await withToken(tokens.access_token).get('/api/auth/me').expect(401);
+        await withToken(loginToken).get('/api/auth/me').expect(200);
+
+        const refreshed = await exchange({
+          grant_type: 'refresh_token',
+          refresh_token: tokens.refresh_token,
+          client_id: clientId,
+        }).expect(200);
+        const next = refreshed.body as Tokens;
+        expect(next.refresh_token).not.toBe(tokens.refresh_token);
+        await rpc('tools/list', {}, withToken(next.access_token)).expect(200);
+
+        // An old refresh token used again was copied: access ends for both.
+        const reused = await exchange({
+          grant_type: 'refresh_token',
+          refresh_token: tokens.refresh_token,
+          client_id: clientId,
+        }).expect(400);
+        expect(reused.body).toMatchObject({ error: 'invalid_grant' });
+        await rpc('tools/list', {}, withToken(next.access_token)).expect(401);
+      });
+
+      it('ends access when the client revokes a token', async () => {
+        const { email } = await register();
+        const { clientId, tokens } = await signIn(email);
+        const client = withToken(tokens.access_token);
+        await rpc('tools/list', {}, client).expect(200);
+
+        await anonymous()
+          .post('/revoke')
+          .type('form')
+          .send({ token: tokens.refresh_token, client_id: clientId })
+          .expect(200);
+        await rpc('tools/list', {}, client).expect(401);
+        await exchange({
+          grant_type: 'refresh_token',
+          refresh_token: tokens.refresh_token,
+          client_id: clientId,
+        }).expect(400);
+      });
+
+      it('lets the user allow only reading', async () => {
+        const { email } = await register();
+        const { tokens } = await signIn(email, { write: false });
+        expect(tokens.scope).toBe(MCP_READ_SCOPE);
+        const client = withToken(tokens.access_token);
+
+        const search = await callTool('search_posts', { q: word }, client);
+        expect(search.isError).toBeFalsy();
+        const write = await callTool(
+          'create_post',
+          { title: 'T', content: 'C', categoryId },
+          client,
+        );
+        expect(errorText(write)).toContain('allowed only to read');
+      });
+
+      it('sends the user back when they deny', async () => {
+        const clientId = await registerClient();
+        const page = await authorize(clientId, pkce().challenge).expect(200);
+        const denied = await consent({
+          request: requestTokenOf(page.text),
+          decision: 'deny',
+        }).expect(303);
+        const location = new URL(denied.headers.location);
+        expect(location.searchParams.get('error')).toBe('access_denied');
+        expect(location.searchParams.get('state')).toBe('some-state');
+      });
+
+      it('refuses bad requests', async () => {
+        const clientId = await registerClient();
+
+        // An unregistered redirect URI is not redirected to.
+        await authorize(clientId, pkce().challenge, {
+          redirect_uri: 'https://evil.test/callback',
+        }).expect(400);
+
+        // Tokens are only for this MCP server.
+        const otherResource = await authorize(clientId, pkce().challenge, {
+          resource: 'https://other.test/mcp',
+        }).expect(302);
+        expect(
+          new URL(otherResource.headers.location).searchParams.get('error'),
+        ).toBe('invalid_target');
+
+        // The consent request is signed, so it cannot be changed or made up.
+        const forged = await consent({
+          request: 'forged',
+          decision: 'allow',
+        }).expect(400);
+        expect(forged.text).toContain('This page has expired');
+      });
     });
   });
 
@@ -2678,9 +2987,9 @@ describe('API (e2e)', () => {
               expect(mailerSend).toHaveBeenCalledWith({
                 to: user.email,
                 subject: 'Welcome',
-                text: `Hi ${user.nickname}!\n\nOpen: http://app.test/posts/1`,
+                text: `Hi ${user.nickname}!\n\nOpen: https://app.test/posts/1`,
                 html: expect.stringContaining(
-                  'href="http://app.test/posts/1"',
+                  'href="https://app.test/posts/1"',
                 ) as string,
               });
               const { data } = await listNotifications(user.token);
@@ -2757,7 +3066,7 @@ describe('API (e2e)', () => {
                 `Hi ${author.nickname}!`,
                 `${commenter} commented on your post "${title}":`,
                 excerpt,
-                `View the post: http://app.test/api/posts/${postId}`,
+                `View the post: https://app.test/api/posts/${postId}`,
               ].join('\n\n'),
             });
             expect(excerpt).toHaveLength(200);

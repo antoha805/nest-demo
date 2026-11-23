@@ -13,15 +13,22 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../auth/authenticated-user';
+import { McpResource } from '../auth/decorators/mcp-resource.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { MCP_WRITE_SCOPE, OAuthUrls } from '../auth/oauth/oauth-urls';
 import { McpServerFactory } from './mcp-server.factory';
 
-// The MCP endpoint, over Streamable HTTP. Public, as anyone can read: with a
-// token the tools act as its user, and the writing tools need one.
+// The MCP endpoint, over Streamable HTTP, for clients signed in with OAuth.
+// Public to the guard only so that a missing token gets the 401 below, which
+// tells clients where to sign in.
 @Public()
+@McpResource()
 @Controller('mcp')
 export class McpController {
-  constructor(private readonly mcpServerFactory: McpServerFactory) {}
+  constructor(
+    private readonly mcpServerFactory: McpServerFactory,
+    private readonly urls: OAuthUrls,
+  ) {}
 
   // Stateless: each request gets its own server and transport, so nothing is
   // kept between requests and any instance can answer. Responses are plain
@@ -31,14 +38,27 @@ export class McpController {
     @Req() request: AuthenticatedRequest,
     @Res() response: Response,
   ): Promise<void> {
-    // The guard ignores a bad token on public routes, but here that would
-    // quietly turn a client whose token expired into an anonymous one.
-    if (request.headers.authorization && !request.user) {
-      response.setHeader('WWW-Authenticate', 'Bearer error="invalid_token"');
-      throw new UnauthorizedException('The token is invalid or expired');
+    // Points clients at the metadata that leads to the sign-in, per the MCP
+    // authorization spec. A client whose token expired is told so, and
+    // refreshes it.
+    if (!request.user) {
+      const metadata = `resource_metadata="${this.urls.protectedResourceMetadata}"`;
+      response.setHeader(
+        'WWW-Authenticate',
+        request.headers.authorization
+          ? `Bearer error="invalid_token", ${metadata}`
+          : `Bearer ${metadata}`,
+      );
+      throw new UnauthorizedException(
+        request.headers.authorization
+          ? 'The token is invalid or expired'
+          : 'Sign in with OAuth to use the MCP server',
+      );
     }
 
-    const server = this.mcpServerFactory.create(request.user);
+    const server = this.mcpServerFactory.create(request.user, {
+      canWrite: request.tokenScopes?.includes(MCP_WRITE_SCOPE) ?? false,
+    });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

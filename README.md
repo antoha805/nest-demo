@@ -144,7 +144,7 @@ To add a transport, add its pino transport target to `src/config/log-transports.
 
 ## Authentication and authorization
 
-`POST /api/auth/register` and `POST /api/auth/login` return an `accessToken`. Send it as `Authorization: Bearer <token>`. Both endpoints allow 10 requests per minute per IP.
+`POST /api/auth/register` and `POST /api/auth/login` return an `accessToken`. Send it as `Authorization: Bearer <token>`. Both endpoints allow 10 requests per minute per IP. These tokens work on every route except `/api/mcp`, which takes only the tokens MCP clients get through OAuth: see [Signing in with OAuth](#signing-in-with-oauth).
 
 ### Email confirmation
 
@@ -175,50 +175,51 @@ Removing a name from that file makes the next sync delete the permission and all
 
 ## Endpoints
 
-| Method | Path                            | Permission                                     | Description                                                |
-| ------ | ------------------------------- | ---------------------------------------------- | ---------------------------------------------------------- |
-| POST   | `/api/auth/register`            | Public                                         | Create an account                                          |
-| POST   | `/api/auth/login`               | Public                                         | Get an access token                                        |
-| GET    | `/api/auth/me`                  | Any logged-in user                             | Get your roles, permissions and unread notifications count |
-| PATCH  | `/api/auth/me`                  | Any logged-in user                             | Change your `nickname` and `phone`                         |
-| POST   | `/api/auth/verify-email`        | Any logged-in user                             | Confirm your email with the mailed code                    |
-| POST   | `/api/auth/verify-email/resend` | Any logged-in user                             | Mail a new code                                            |
-| POST   | `/api/categories`               | `categories.create`                            | Create a category                                          |
-| GET    | `/api/categories`               | Public                                         | List categories                                            |
-| GET    | `/api/categories/:id`           | Public                                         | Get a category                                             |
-| PATCH  | `/api/categories/:id`           | `categories.update`                            | Update a category                                          |
-| DELETE | `/api/categories/:id`           | `categories.delete`                            | Delete a category                                          |
-| POST   | `/api/posts`                    | `posts.create`                                 | Create a post                                              |
-| GET    | `/api/posts`                    | Public                                         | List posts                                                 |
-| GET    | `/api/posts/:id`                | Public                                         | Get a post                                                 |
-| PATCH  | `/api/posts/:id`                | `posts.update.all` or `posts.update.own`       | Update a post                                              |
-| DELETE | `/api/posts/:id`                | `posts.delete.all` or `posts.delete.own`       | Delete a post                                              |
-| PUT    | `/api/posts/:id/publish`        | `posts.publish`                                | Publish a post, which is final                             |
-| PUT    | `/api/posts/:id/like`           | `posts.like`                                   | Like a post                                                |
-| DELETE | `/api/posts/:id/like`           | `posts.like`                                   | Remove your like from a post                               |
-| POST   | `/api/posts/:postId/comments`   | `comments.create`                              | Comment on a post                                          |
-| GET    | `/api/posts/:postId/comments`   | Public                                         | List a post's comments                                     |
-| PATCH  | `/api/comments/:id`             | `comments.update.own`                          | Update your comment                                        |
-| DELETE | `/api/comments/:id`             | `comments.delete.all` or `comments.delete.own` | Delete a comment                                           |
-| PUT    | `/api/comments/:id/like`        | `comments.like`                                | Like a comment                                             |
-| DELETE | `/api/comments/:id/like`        | `comments.like`                                | Remove your like from a comment                            |
-| GET    | `/api/users`                    | `users.read`                                   | List users                                                 |
-| GET    | `/api/users/:id`                | `users.read`                                   | Get a user                                                 |
-| PUT    | `/api/users/:id/roles`          | `users.manage`                                 | Replace a user's roles                                     |
-| PUT    | `/api/users/:id/permissions`    | `users.manage`                                 | Replace direct permissions                                 |
-| DELETE | `/api/users/:id`                | `users.manage`                                 | Delete a user                                              |
-| POST   | `/api/roles`                    | `roles.manage`                                 | Create a role                                              |
-| GET    | `/api/roles`                    | `roles.read`                                   | List roles                                                 |
-| GET    | `/api/roles/:id`                | `roles.read`                                   | Get a role                                                 |
-| PATCH  | `/api/roles/:id`                | `roles.manage`                                 | Update a role                                              |
-| DELETE | `/api/roles/:id`                | `roles.manage`                                 | Delete a role                                              |
-| GET    | `/api/permissions`              | `roles.read`                                   | List permissions                                           |
-| GET    | `/api/notifications`            | Any logged-in user                             | List your notifications                                    |
-| GET    | `/api/notifications/stream`     | Any logged-in user                             | Receive your notifications live (SSE)                      |
-| PUT    | `/api/notifications/:id/read`   | Any logged-in user                             | Mark a notification as read                                |
-| DELETE | `/api/notifications/:id/read`   | Any logged-in user                             | Mark a notification as unread                              |
-| POST   | `/api/notifications/read-all`   | Any logged-in user                             | Mark all your notifications as read                        |
-| POST   | `/api/mcp`                      | Public, each tool as its route                 | The MCP server, see [MCP](#mcp)                            |
+| Method | Path                            | Permission                                     | Description                                                  |
+| ------ | ------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ |
+| POST   | `/api/auth/register`            | Public                                         | Create an account                                            |
+| POST   | `/api/auth/login`               | Public                                         | Get an access token                                          |
+| GET    | `/api/auth/me`                  | Any logged-in user                             | Get your roles, permissions and unread notifications count   |
+| PATCH  | `/api/auth/me`                  | Any logged-in user                             | Change your `nickname` and `phone`                           |
+| POST   | `/api/auth/verify-email`        | Any logged-in user                             | Confirm your email with the mailed code                      |
+| POST   | `/api/auth/verify-email/resend` | Any logged-in user                             | Mail a new code                                              |
+| POST   | `/api/categories`               | `categories.create`                            | Create a category                                            |
+| GET    | `/api/categories`               | Public                                         | List categories                                              |
+| GET    | `/api/categories/:id`           | Public                                         | Get a category                                               |
+| PATCH  | `/api/categories/:id`           | `categories.update`                            | Update a category                                            |
+| DELETE | `/api/categories/:id`           | `categories.delete`                            | Delete a category                                            |
+| POST   | `/api/posts`                    | `posts.create`                                 | Create a post                                                |
+| GET    | `/api/posts`                    | Public                                         | List posts                                                   |
+| GET    | `/api/posts/:id`                | Public                                         | Get a post                                                   |
+| PATCH  | `/api/posts/:id`                | `posts.update.all` or `posts.update.own`       | Update a post                                                |
+| DELETE | `/api/posts/:id`                | `posts.delete.all` or `posts.delete.own`       | Delete a post                                                |
+| PUT    | `/api/posts/:id/publish`        | `posts.publish`                                | Publish a post, which is final                               |
+| PUT    | `/api/posts/:id/like`           | `posts.like`                                   | Like a post                                                  |
+| DELETE | `/api/posts/:id/like`           | `posts.like`                                   | Remove your like from a post                                 |
+| POST   | `/api/posts/:postId/comments`   | `comments.create`                              | Comment on a post                                            |
+| GET    | `/api/posts/:postId/comments`   | Public                                         | List a post's comments                                       |
+| PATCH  | `/api/comments/:id`             | `comments.update.own`                          | Update your comment                                          |
+| DELETE | `/api/comments/:id`             | `comments.delete.all` or `comments.delete.own` | Delete a comment                                             |
+| PUT    | `/api/comments/:id/like`        | `comments.like`                                | Like a comment                                               |
+| DELETE | `/api/comments/:id/like`        | `comments.like`                                | Remove your like from a comment                              |
+| GET    | `/api/users`                    | `users.read`                                   | List users                                                   |
+| GET    | `/api/users/:id`                | `users.read`                                   | Get a user                                                   |
+| PUT    | `/api/users/:id/roles`          | `users.manage`                                 | Replace a user's roles                                       |
+| PUT    | `/api/users/:id/permissions`    | `users.manage`                                 | Replace direct permissions                                   |
+| DELETE | `/api/users/:id`                | `users.manage`                                 | Delete a user                                                |
+| POST   | `/api/roles`                    | `roles.manage`                                 | Create a role                                                |
+| GET    | `/api/roles`                    | `roles.read`                                   | List roles                                                   |
+| GET    | `/api/roles/:id`                | `roles.read`                                   | Get a role                                                   |
+| PATCH  | `/api/roles/:id`                | `roles.manage`                                 | Update a role                                                |
+| DELETE | `/api/roles/:id`                | `roles.manage`                                 | Delete a role                                                |
+| GET    | `/api/permissions`              | `roles.read`                                   | List permissions                                             |
+| GET    | `/api/notifications`            | Any logged-in user                             | List your notifications                                      |
+| GET    | `/api/notifications/stream`     | Any logged-in user                             | Receive your notifications live (SSE)                        |
+| PUT    | `/api/notifications/:id/read`   | Any logged-in user                             | Mark a notification as read                                  |
+| DELETE | `/api/notifications/:id/read`   | Any logged-in user                             | Mark a notification as unread                                |
+| POST   | `/api/notifications/read-all`   | Any logged-in user                             | Mark all your notifications as read                          |
+| POST   | `/api/mcp`                      | An OAuth token, each tool as its route         | The MCP server, see [MCP](#mcp)                              |
+| POST   | `/api/oauth/consent`            | Public                                         | The consent page's form, see [OAuth](#signing-in-with-oauth) |
 
 A category that still has posts cannot be deleted (`409 Conflict`). Categories return `postsCount`, which only counts published posts, so it is the same for every user and does not reveal drafts.
 
@@ -248,20 +249,36 @@ Liking and unliking are idempotent and respond with `204 No Content`. Posts and 
 
 Each tool calls the same service as its route, after the same checks in the same order: the token, the permission, then the input, validated by the same DTOs. Checks that depend on the record, like `posts.update.own`, are in `PostsService.can()` and `CommentsService.can()`, which the `PostAccess` and `CommentAccess` guards use too, so a rule changed there applies to both. Tools that cannot be undone, deleting and publishing, are marked as destructive, so clients ask before running them. Errors come back as tool errors with the same message as the REST response.
 
-Logging in, registering, users, roles and the live notifications stream are REST only. A client sends the token from its configuration, so it could not use one a tool returned.
+Registering, users, roles and the live notifications stream are REST only. Clients sign in through OAuth rather than a tool, as they need the token before they can call one.
 
 There are also two prompts, which clients offer in a menu: `draft_post` writes a post on a topic and saves it as a draft, completing category names as you type, and `summarize_comments` summarizes a post's comments.
 
-The endpoint is public, as anyone can read: without a token the tools show published posts only, and the writing tools ask for one. With `Authorization: Bearer <token>` they act as that user. A token that is invalid or has expired gets `401 Unauthorized`, rather than quietly reading as anonymous.
-
-It uses the Streamable HTTP transport statelessly: each request is answered on its own, with plain JSON, so `GET` and `DELETE` respond with `405 Method Not Allowed`. To add it to Claude Code:
+It uses the Streamable HTTP transport statelessly: each request is answered on its own, with plain JSON, so `GET` and `DELETE` respond with `405 Method Not Allowed`. Clients sign in with OAuth, below, so adding it needs only the URL. In Claude Code:
 
 ```bash
-claude mcp add --transport http nest-demo https://antoha805-nest-demo.duckdns.org/api/mcp \
-  --header "Authorization: Bearer <token>"
+claude mcp add --transport http nest-demo https://antoha805-nest-demo.duckdns.org/api/mcp
 ```
 
-Leave out `--header` to read anonymously. Tokens expire after `JWT_EXPIRES_IN`, so log in again and update the header when they do. The server does not implement MCP's OAuth flow, which claude.ai connectors require.
+Then run `/mcp` and choose to authenticate. In claude.ai, add it as a custom connector with the same URL.
+
+### Signing in with OAuth
+
+The app is an OAuth 2.1 authorization server for MCP clients, as the [MCP authorization spec](https://modelcontextprotocol.io/specification/latest/basic/authorization) describes, built on the SDK's `mcpAuthRouter` with a provider in `src/auth/oauth`. A client finds it on its own:
+
+1. `/api/mcp` without a valid token gets `401 Unauthorized` with `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/api/mcp"`, which names the authorization server.
+2. The client reads `/.well-known/oauth-authorization-server` and registers itself at `POST /register` (dynamic client registration, RFC 7591).
+3. It opens `/authorize` in the browser with a PKCE challenge. The consent page there asks for the user's email and password, shows the client's name and where it will send them back, and lets them untick writing. It posts to `POST /api/oauth/consent`, which allows 10 requests per minute per IP, like login.
+4. The client swaps the code it gets back for tokens at `POST /token`, with the PKCE verifier.
+
+These endpoints are at the root, not under `/api`, where OAuth places them. Every request is limited per IP by the SDK.
+
+- **Access tokens** are JWTs for `/api/mcp` only: their audience is its URL, and login tokens have another, so neither works in the other's place. They last an hour.
+- **Refresh tokens** last 30 days from their last use, so a client in use stays signed in. Each refresh replaces the refresh token. If a replaced one is used again, it was copied, so access ends for both copies.
+- **Scopes:** `mcp:read` is always granted. `mcp:write` is granted if the client asks for it, or asks for no scope, and the user leaves writing ticked. Without it, the tools that write answer with an error saying so. Either way, each tool still needs the user's permissions.
+- **Revoking:** `POST /revoke` with either token, or deleting the user, ends the grant, and its access tokens stop working at once, as each request checks that the grant still exists.
+- **Storage:** codes and refresh tokens are stored as SHA-256 hashes, in `oauth_authorization_codes` and `oauth_grants`. Registered clients are in `oauth_clients`, with the secret of confidential clients as is, as the SDK compares it.
+
+The URLs come from `APP_URL`, which must be the public HTTPS URL in production: the SDK refuses an `http` issuer other than localhost.
 
 ## Notifications
 

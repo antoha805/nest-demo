@@ -13,6 +13,7 @@ import { CredentialsDto } from './dto/credentials.dto';
 import { EmailVerificationService } from './email-verification.service';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { OAuthUrls } from './oauth/oauth-urls';
 
 const BCRYPT_ROUNDS = 12;
 // Compared for unknown emails, so they take as long to reject as wrong passwords.
@@ -26,6 +27,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly emailVerificationService: EmailVerificationService,
+    private readonly urls: OAuthUrls,
   ) {}
 
   async register({ email, password, nickname }: RegisterDto) {
@@ -37,13 +39,23 @@ export class AuthService {
     return this.issueToken(user.id);
   }
 
-  async login({ email, password }: CredentialsDto) {
-    const user = await this.usersService.findCredentials(email);
-    const matches = await compare(password, user?.passwordHash ?? DUMMY_HASH);
-    if (!user || !matches) {
+  async login(credentials: CredentialsDto) {
+    const userId = await this.checkCredentials(credentials);
+    if (!userId) {
       throw new UnauthorizedException('Invalid email or password');
     }
-    return this.issueToken(user.id);
+    return this.issueToken(userId);
+  }
+
+  // The user's id, or null if the email or password is wrong. Also used by
+  // the OAuth consent page.
+  async checkCredentials({
+    email,
+    password,
+  }: CredentialsDto): Promise<string | null> {
+    const user = await this.usersService.findCredentials(email);
+    const matches = await compare(password, user?.passwordHash ?? DUMMY_HASH);
+    return user && matches ? user.id : null;
   }
 
   // What GET /api/auth/me returns: the user, with their unread notifications
@@ -76,7 +88,13 @@ export class AuthService {
     );
   }
 
+  // For the REST API only: /api/mcp takes the tokens OAuth issues.
   private async issueToken(userId: string) {
-    return { accessToken: await this.jwtService.signAsync({ sub: userId }) };
+    return {
+      accessToken: await this.jwtService.signAsync(
+        { sub: userId },
+        { audience: this.urls.restAudience },
+      ),
+    };
   }
 }

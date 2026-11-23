@@ -13,6 +13,9 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { EmailVerificationService } from './email-verification.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { OAuthController } from './oauth/oauth.controller';
+import { OAuthProvider } from './oauth/oauth.provider';
+import { OAuthUrls } from './oauth/oauth-urls';
 
 @Module({
   imports: [
@@ -34,16 +37,19 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
     // Applies only where ThrottlerGuard is used: per IP, per route.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 10 }]),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, OAuthController],
   providers: [
     AuthService,
     EmailVerificationService,
+    OAuthUrls,
+    OAuthProvider,
     // Every route requires a token unless marked @Public(). Order matters:
     // PoliciesGuard reads the user that JwtAuthGuard sets.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PoliciesGuard },
   ],
-  // For the MCP tools that act on the user's own account.
-  exports: [AuthService, EmailVerificationService],
+  // For the MCP tools that act on the user's own account, and the MCP
+  // endpoint, which points clients at the OAuth metadata.
+  exports: [AuthService, EmailVerificationService, OAuthUrls],
 })
 export class AuthModule {}
